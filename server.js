@@ -170,11 +170,12 @@ app.put('/api/memory', (req, res) => {
 });
 
 // Synchronisation HM-07 (aussi utilisée par HM-24) ; lève une erreur au message lisible si elle est impossible.
-function syncMemory(confirm = []) {
+// Une mémoire vide n'est recopiée que sur demande explicite (allowEmpty) : elle vide le bloc HIVEMIND des 3 fichiers.
+function syncMemory(confirm = [], { allowEmpty = false } = {}) {
   const dir = settings.workdir();
   if (!dir) throw new Error('Choisissez d\'abord un dossier de travail (en haut de la page).');
   const memory = readText(MEMORY_FILE);
-  if (!memory.trim()) throw new Error('La mémoire est vide : écrivez-la et enregistrez-la avant de synchroniser.');
+  if (!memory.trim() && !allowEmpty) throw new Error('La mémoire est vide : écrivez-la et enregistrez-la avant de synchroniser.');
   if (memory.includes(sync.START) || memory.includes(sync.END)) {
     throw new Error('La mémoire ne doit pas contenir les balises HIVEMIND elles-mêmes.');
   }
@@ -184,7 +185,7 @@ function syncMemory(confirm = []) {
 app.post('/api/sync', (req, res) => {
   const confirm = Array.isArray(req.body?.confirm) ? req.body.confirm.map(String) : [];
   try {
-    res.json(syncMemory(confirm));
+    res.json(syncMemory(confirm, { allowEmpty: req.body?.allowEmpty === true }));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

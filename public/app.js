@@ -1141,7 +1141,7 @@ function renderSync(dir, results) {
 }
 
 // Un fichier existant sans bloc Hivemind n'est complété qu'après confirmation (HM-07).
-async function confirmPending({ dir, results }) {
+async function confirmPending({ dir, results }, extra = {}) {
   const pendingFiles = results.filter((r) => r.status === 'needs-confirm').map((r) => r.file);
   if (!pendingFiles.length) return { dir, results };
   const ok = await confirmDialog({
@@ -1149,7 +1149,7 @@ async function confirmPending({ dir, results }) {
     message: `${pendingFiles.join(', ')} existe déjà dans ${dir} sans bloc Hivemind.\n\nLa mémoire sera ajoutée à la fin, entre deux balises. Le contenu existant ne sera pas modifié.`,
     okLabel: 'Ajouter à la fin',
   });
-  return ok ? api('/api/sync', { method: 'POST', body: { confirm: pendingFiles } }) : { dir, results };
+  return ok ? api('/api/sync', { method: 'POST', body: { ...extra, confirm: pendingFiles } }) : { dir, results };
 }
 
 memorySync.addEventListener('click', async () => {
@@ -1157,7 +1157,19 @@ memorySync.addEventListener('click', async () => {
   syncResults.replaceChildren();
   try {
     if (memoryEditor.value !== savedMemory) await saveMemory();
-    const { dir, results } = await confirmPending(await api('/api/sync', { method: 'POST', body: {} }));
+    // Une mémoire vide efface ce que les IA savaient : on le fait confirmer.
+    const extra = {};
+    if (!savedMemory.trim()) {
+      const ok = await confirmDialog({
+        title: 'Vider la mémoire des IA ?',
+        message: 'La mémoire est vide : le bloc Hivemind de CLAUDE.md, AGENTS.md et GEMINI.md sera vidé et les IA oublieront tout ce qu\'il contenait.\n\nLe contenu hors balises n\'est pas modifié.',
+        okLabel: 'Vider la mémoire',
+        danger: true,
+      });
+      if (!ok) return;
+      extra.allowEmpty = true;
+    }
+    const { dir, results } = await confirmPending(await api('/api/sync', { method: 'POST', body: extra }), extra);
     renderSync(dir, results);
     const failed = results.filter((r) => !SYNC_OK.includes(r.status));
     if (failed.length) {
