@@ -31,7 +31,7 @@
       <div class="sidebar-foot">
         <section class="side-block" aria-labelledby="cli-status-title">
           <div class="side-title">
-            <span id="cli-status-title">IA détectées</span>
+            <span id="cli-status-title">IA · usage du jour</span>
             <button type="button" id="refresh-clis" class="btn-text">Rafraîchir</button>
           </div>
           <ul id="cli-status-list" class="cli-status"></ul>
@@ -57,6 +57,17 @@
           </label>
           <p class="side-subtitle" id="order-title">Ordre des IA</p>
           <ol id="fallback-order" class="fallback-order" aria-labelledby="order-title"></ol>
+          <p class="side-subtitle" id="limits-title">Limites quotidiennes indicatives</p>
+          <p class="side-note">Les CLI ne donnent pas leur quota réel : ces limites sont des repères que vous fixez vous-même. Vide = pas de limite.</p>
+          <div id="limit-list" class="limit-list" role="group" aria-labelledby="limits-title"></div>
+          <label class="switch-row" id="skip-row">
+            <span>
+              Passer directement à l'IA suivante quand la limite est atteinte
+              <small>Avec la bascule automatique : l'IA à sa limite est sautée.</small>
+            </span>
+            <input type="checkbox" role="switch" id="skip-toggle" class="switch">
+          </label>
+          <button type="button" id="usage-reset" class="btn btn-small">Remettre les compteurs à zéro</button>
           <label class="switch-row switch-danger">
             <span>
               Simuler une panne de Claude Code

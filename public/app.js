@@ -43,7 +43,10 @@ async function apiStream(url, body, onEvent) {
     for (const line of lines) {
       if (!line.trim()) continue;
       const event = JSON.parse(line);
-      if (event.type === 'done') return event.entry;
+      if (event.type === 'done') {
+        if (event.usage) applyUsage(event.usage);
+        return event.entry;
+      }
       onEvent(event);
     }
     if (done) throw new Error('La connexion avec le serveur a été coupée avant la fin de la réponse. L\'échange est peut-être dans l\'historique : rechargez la page.');
@@ -903,6 +906,7 @@ function renderPicker() {
     pill.setAttribute('aria-checked', String(Boolean(on)));
     pill.append(compareMode ? el('span', 'check') : dot(cli.id), cli.name.replace(/ CLI$/, ''));
     if (cli.id === 'claude' && settingsState?.simulateClaudeDown) pill.append(el('span', 'tag tag-danger', 'panne simulée'));
+    if (usageLevel(cli.id).level === 'over') pill.append(el('span', 'tag tag-danger', 'limite atteinte'));
     if (!cli.available) {
       pill.setAttribute('aria-disabled', 'true');
       pill.setAttribute('aria-label', `${cli.name} (non installée)`);
@@ -1137,18 +1141,83 @@ $('#relay-cancel').addEventListener('click', () => {
 const cliStatusList = $('#cli-status-list');
 const refreshButton = $('#refresh-clis');
 
+// --- Usage du jour (HM-16) ---
+let usageState = { day: '', clis: {} };
+
+function usageOf(cliId) {
+  return usageState.clis[cliId] || { envois: 0, echecs: 0, annules: 0, dureeMs: 0 };
+}
+
+// Niveau par rapport à la limite indicative : ok, warn (80 %), over (100 %).
+function usageLevel(cliId) {
+  const limit = settingsState?.limits?.[cliId];
+  const count = usageOf(cliId).envois;
+  if (!limit) return { limit: 0, count, ratio: 0, level: 'ok' };
+  const ratio = count / limit;
+  return { limit, count, ratio, level: ratio >= 1 ? 'over' : ratio >= 0.8 ? 'warn' : 'ok' };
+}
+
+function formatCumul(ms) {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s} s`;
+  return `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`;
+}
+
+function plural(n, word) {
+  return `${n} ${word}${n > 1 ? 's' : ''}`;
+}
+
 function renderClis() {
   cliStatusList.replaceChildren(...clis.map((cli) => {
-    const li = el('li', cli.available ? 'on' : 'off');
+    const u = usageOf(cli.id);
+    const { limit, count, ratio, level } = usageLevel(cli.id);
+    const li = el('li', `${cli.available ? 'on' : 'off'} usage-${level}`);
+    const row = el('div', 'cli-row');
     const state = el('span', 'state');
     state.setAttribute('aria-hidden', 'true');
-    li.append(state, el('span', '', cli.name.replace(/ CLI$/, '')));
-    li.title = cli.available ? `${cli.name} disponible : ${cli.version}` : `${cli.name} absente : « ${cli.command} --version » ne répond pas`;
-    li.setAttribute('aria-label', `${cli.name} : ${cli.available ? 'disponible' : 'non installée'}`);
+    row.append(state, el('span', 'name', cli.name.replace(/ CLI$/, '')), el('span', 'usage-count', limit ? `${count} / ${limit}` : String(count)));
+    li.append(row);
+    if (limit) {
+      const bar = el('div', 'usage-bar');
+      bar.setAttribute('role', 'progressbar');
+      bar.setAttribute('aria-valuemin', '0');
+      bar.setAttribute('aria-valuemax', String(limit));
+      bar.setAttribute('aria-valuenow', String(count));
+      bar.setAttribute('aria-label', `Usage du jour de ${cli.name}`);
+      const fill = el('span');
+      fill.style.width = `${Math.min(100, Math.round(ratio * 100))}%`;
+      bar.append(fill);
+      li.append(bar);
+      if (level !== 'ok') li.append(el('p', 'usage-alert', level === 'over' ? 'Limite indicative atteinte' : `${Math.round(ratio * 100)} % de la limite`));
+    }
+    const status = cli.available ? `disponible (${cli.version})` : 'non installée';
+    const today = `Aujourd'hui : ${plural(u.envois, 'envoi')} · ${plural(u.echecs, 'échec')} · ${plural(u.annules, 'annulé')} · ${formatCumul(u.dureeMs)} cumulées`;
+    li.title = `${cli.name} ${status}\n${today}`;
+    li.setAttribute('aria-label', `${cli.name} : ${status}. ${today}${limit ? `, limite ${limit}` : ''}`);
     return li;
   }));
   renderPicker();
   renderOrder();
+  renderLimits();
+}
+
+function applyUsage(usage) {
+  usageState = usage;
+  if (clis.length) renderClis();
+}
+
+async function loadUsage() {
+  applyUsage(await api('/api/usage'));
+}
+
+// Remise à zéro automatique : on relit les compteurs juste après minuit.
+function scheduleMidnight() {
+  const now = new Date();
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5);
+  setTimeout(() => {
+    loadUsage().catch(() => {});
+    scheduleMidnight();
+  }, next - now);
 }
 
 async function loadClis(refresh = false) {
@@ -1374,6 +1443,7 @@ rememberSummarize.addEventListener('click', async () => {
   } finally {
     rememberSummarize.disabled = false;
     rememberSave.disabled = false;
+    loadUsage().catch(() => {});
   }
 });
 
@@ -1443,6 +1513,32 @@ workdirChip.addEventListener('click', () => {
   });
 });
 
+function renderLimits() {
+  const list = $('#limit-list');
+  if (list.contains(document.activeElement)) return; // ne pas perdre la saisie en cours
+  list.replaceChildren(...clis.map((cli) => {
+    const row = el('label', 'limit-row');
+    const input = el('input', 'field limit-input');
+    input.type = 'number';
+    input.min = '1';
+    input.step = '1';
+    input.inputMode = 'numeric';
+    input.placeholder = '—';
+    input.value = settingsState?.limits?.[cli.id] ?? '';
+    input.setAttribute('aria-label', `Limite quotidienne de ${cli.name}`);
+    input.addEventListener('change', () => {
+      const limits = { ...(settingsState?.limits || {}) };
+      if (input.value.trim()) limits[cli.id] = input.value.trim();
+      else delete limits[cli.id];
+      saveOptions({ limits });
+    });
+    row.append(dot(cli.id), el('span', 'name', cli.name.replace(/ CLI$/, '')), input);
+    return row;
+  }));
+  $('#skip-row').hidden = !settingsState?.fallback;
+  $('#skip-toggle').checked = Boolean(settingsState?.skipAtLimit);
+}
+
 function showOptions(settings) {
   fallbackToggle.checked = settings.fallback;
   simulateToggle.checked = settings.simulateClaudeDown;
@@ -1451,6 +1547,7 @@ function showOptions(settings) {
   $('#settings-alert').hidden = !settings.simulateClaudeDown;
   renderOrder();
   renderPicker();
+  if (clis.length) renderClis();
 }
 
 function applySettings(settings) {
@@ -1503,12 +1600,28 @@ async function saveOptions(patch) {
 }
 
 fallbackToggle.addEventListener('change', () => saveOptions({ fallback: fallbackToggle.checked }));
+$('#skip-toggle').addEventListener('change', (e) => saveOptions({ skipAtLimit: e.target.checked }));
+$('#usage-reset').addEventListener('click', async () => {
+  const ok = await confirmDialog({
+    title: 'Remettre les compteurs à zéro ?',
+    message: 'Les compteurs d\'usage du jour (envois, échecs, annulés, durées) repartent de zéro pour toutes les IA.',
+    okLabel: 'Remettre à zéro',
+  });
+  if (!ok) return;
+  try {
+    applyUsage(await api('/api/usage/reset', { method: 'POST' }));
+    toast('Compteurs remis à zéro');
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+});
 simulateToggle.addEventListener('change', () => saveOptions({ simulateClaudeDown: simulateToggle.checked }));
 $('#sim-off').addEventListener('click', () => saveOptions({ simulateClaudeDown: false }));
 
 // --- Démarrage ---
 (async () => {
-  const steps = [loadClis(), loadSettings(), loadMemory(), loadHistory().then(loadSessions)];
+  const steps = [loadClis(), loadSettings(), loadMemory(), loadUsage(), loadHistory().then(loadSessions)];
+  scheduleMidnight();
   const results = await Promise.allSettled(steps);
   const failed = results.find((r) => r.status === 'rejected');
   if (failed) toast(failed.reason.message, 'err');

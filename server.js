@@ -5,6 +5,7 @@ const express = require('express');
 const { CLIS, listClis, detect, ask, askWithFallback } = require('./lib/clis');
 const history = require('./lib/history');
 const sessions = require('./lib/sessions');
+const usage = require('./lib/usage');
 const settings = require('./lib/settings');
 const sync = require('./lib/sync');
 const { addDecision } = require('./lib/decisions');
@@ -104,7 +105,7 @@ function eventStream(req, res) {
 
 function reply(res, send, entry) {
   if (!send) return res.json(entry);
-  send({ type: 'done', entry });
+  send({ type: 'done', entry, usage: usage.get() });
   return res.end();
 }
 
@@ -120,7 +121,7 @@ app.post('/api/ask', async (req, res) => {
     return res.status(400).json({ error: err.message });
   }
   await detection;
-  const { fallback, fallbackOrder, simulateClaudeDown } = settings.get();
+  const { fallback, fallbackOrder, simulateClaudeDown, limits, skipAtLimit } = settings.get();
   const relay = relayOf(req.body);
   // Une relecture ne doit pas basculer vers l'IA qui a écrit la réponse relue.
   const exclude = relay?.relayKind === 'relecture' && relay.sourceId ? [relay.sourceId] : [];
@@ -128,6 +129,8 @@ app.post('/api/ask', async (req, res) => {
   const signal = track(req, res);
   const answer = await askWithFallback(cli, prompt, {
     signal,
+    skipLimited: fallback && skipAtLimit,
+    atLimit: (id) => Boolean(limits[id]) && usage.count(id) >= limits[id],
     cwd,
     simulateClaudeDown,
     exclude,
@@ -167,6 +170,15 @@ app.post('/api/compare', async (req, res) => {
   const entries = answers.map((answer) => history.add({ ...answer, prompt, compareId, sessionId }));
   if (send) return reply(res, send, entries[0]);
   res.json(entries);
+});
+
+// --- Usage du jour (HM-16) ---
+app.get('/api/usage', (req, res) => {
+  res.json(usage.get());
+});
+
+app.post('/api/usage/reset', (req, res) => {
+  res.json(usage.reset());
 });
 
 app.get('/api/history', (req, res) => {

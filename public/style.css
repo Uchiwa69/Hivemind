@@ -779,3 +779,25 @@ svg { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColo
   .toast { max-width: none; }
 }
 @media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }
+
+/* --- Usage du jour (HM-16) --- */
+.cli-status { grid-template-columns: 1fr; gap: 6px; }
+.cli-status li { display: block; }
+.cli-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cli-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usage-count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.usage-bar { height: 4px; margin: 4px 0 0 13px; border-radius: 999px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
+.usage-bar span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .2s; }
+.usage-warn .usage-bar span { background: var(--warn); }
+.usage-over .usage-bar span { background: var(--err); }
+.usage-alert { margin: 2px 0 0 13px; font-size: 11.5px; font-weight: 600; }
+.usage-warn .usage-alert, .usage-warn .usage-count { color: var(--warn); }
+.usage-over .usage-alert, .usage-over .usage-count { color: var(--err); }
+
+.side-note { margin: 0 0 8px; font-size: 12px; line-height: 1.45; color: var(--muted); }
+.limit-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 4px; }
+.limit-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.limit-row .name { flex: 1; }
+.limit-input { width: 72px; height: 28px; padding: 0 8px; text-align: right; font-family: var(--font); }
+#usage-reset { margin: 4px 0 6px; }
+.sidebar-foot { max-height: 62vh; overflow-y: auto; }
