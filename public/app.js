@@ -554,26 +554,46 @@ function renderError(box, entry) {
   }
 }
 
-const STATE_LABELS = { pending: 'en cours', done: 'fini', fail: 'erreur' };
+// HM-10 : état affiché sur chaque réponse, avec la durée.
+const STATE_LABELS = { pending: 'en cours', done: 'terminé', fail: 'erreur', cancelled: 'annulé' };
 
-function renderHead(name, cliId, meta, state) {
+function entryState(entry) {
+  if (entry.annule) return 'cancelled';
+  return entry.ok === false ? 'fail' : 'done';
+}
+
+function renderHead(name, cliId, meta, state, onCancel) {
   const head = el('div', 'ai-head');
   head.append(dot(cliId), el('strong', '', name));
   if (state) head.append(el('span', `state-tag ${state}`, STATE_LABELS[state]));
   head.append(meta);
+  if (onCancel) {
+    const cancel = button('btn btn-small cancel-btn', 'Annuler', onCancel);
+    cancel.setAttribute('aria-label', `Annuler l'envoi à ${name} (Échap)`);
+    head.append(cancel);
+  }
   return head;
 }
 
 // Réponse d'une IA, à gauche, à la couleur de l'IA.
-function renderAnswer(entry, { state } = {}) {
+function renderAnswer(entry) {
   const cliId = entryCliId(entry);
-  const box = paint(el('div', entry.ok === false ? 'msg-ai error' : 'msg-ai'), cliId);
+  const state = entryState(entry);
+  const box = paint(el('div', { fail: 'msg-ai error', cancelled: 'msg-ai cancelled' }[state] || 'msg-ai'), cliId);
   const meta = el('span', 'meta', [formatDuree(entry.dureeMs), entry.date && formatTime(entry.date)].filter(Boolean).join(' · '));
   box.append(renderHead(entry.cli, cliId, meta, state));
-  if (entry.ok && entry.bascule?.length) box.append(renderFallback(entry));
-  if (entry.ok === false) renderError(box, entry);
-  else box.append(renderRich(entry.reponse));
-  if (entry.ok && entry.id) box.append(renderActions(entry, box));
+  if (state !== 'fail' && entry.bascule?.length) box.append(renderFallback(entry));
+  if (state === 'cancelled') {
+    box.append(el('p', 'cancel-note', entry.reponse
+      ? 'Envoi annulé : voici le texte reçu avant l\'arrêt.'
+      : 'Envoi annulé avant que l\'IA ait commencé à répondre.'));
+    if (entry.reponse) box.append(renderRich(entry.reponse));
+  } else if (state === 'fail') {
+    renderError(box, entry);
+  } else {
+    box.append(renderRich(entry.reponse));
+  }
+  if (entry.id && (entry.ok || (entry.annule && entry.reponse))) box.append(renderActions(entry, box));
   return box;
 }
 
@@ -602,7 +622,12 @@ function renderPendingAnswer(target, { state } = {}) {
   box.setAttribute('aria-busy', 'true');
   const meta = el('span', 'meta elapsed', '0 s');
   meta.dataset.start = String(target.start);
-  box.append(renderHead(cliName(target.cliId), target.cliId, meta, state));
+  box.append(renderHead(cliName(target.cliId), target.cliId, meta, state || 'pending', () => cancelTarget(target)));
+  if (target.cancelling) {
+    const cancel = box.querySelector('.cancel-btn');
+    cancel.disabled = true;
+    cancel.textContent = 'Annulation…';
+  }
   if (target.bascule?.length) box.append(renderFallback({ bascule: target.bascule, cli: cliName(target.cliId) }));
   target.view = el('div');
   box.append(target.view);
@@ -730,12 +755,18 @@ function renderExchange(entry) {
 function renderCompare(prompt, cols) {
   const art = el('article', 'exchange compare');
   art.append(renderPrompt(prompt));
+  const running = cols.filter((col) => col.state === 'pending');
+  if (running.length > 1) {
+    const bar = el('div', 'compare-bar');
+    bar.append(button('btn btn-small', 'Tout annuler', () => running.forEach(cancelTarget)));
+    art.append(bar);
+  }
   const grid = el('div', 'compare-grid');
   grid.setAttribute('role', 'group');
   grid.setAttribute('aria-label', 'Comparaison des réponses');
   grid.append(...cols.map((col) => {
-    if (col.state === 'pending') return renderPendingAnswer(col, { state: 'pending' });
-    const box = renderAnswer(col.entry, { state: col.state });
+    if (col.state === 'pending') return renderPendingAnswer(col);
+    const box = renderAnswer(col.entry);
     if (col.entry.id) box.id = `x-${col.entry.id}`;
     return box;
   }));
@@ -812,7 +843,7 @@ function renderThread({ scroll = true } = {}) {
     seen.add(entry.compareId);
     const group = roots.filter((e) => e.compareId === entry.compareId)
       .sort((a, b) => clisOrder(entryCliId(a)) - clisOrder(entryCliId(b)));
-    const cols = group.map((e) => ({ cliId: entryCliId(e), state: e.ok === false ? 'fail' : 'done', entry: e }));
+    const cols = group.map((e) => ({ cliId: entryCliId(e), state: entryState(e), entry: e }));
     nodes.push(withRelays(renderCompare(group[0].prompt, cols), group.flatMap((e) => children.get(e.id) || [])));
   }
   nodes.push(...ownErrors.map(renderLocalError), ...ownPending.map(renderPending));
@@ -908,6 +939,41 @@ function setCompare(on) {
 
 compareToggle.addEventListener('change', () => setCompare(compareToggle.checked));
 
+// --- Annulation (HM-10) ---
+// La requête peut ne pas être encore enregistrée côté serveur : on réessaie un court instant.
+async function cancelTarget(target) {
+  if (target.cancelling || target.state === 'done' || target.state === 'fail') return;
+  target.cancelling = true;
+  renderThread({ scroll: false });
+  for (let i = 0; i < 6; i++) {
+    try {
+      await api('/api/cancel', { method: 'POST', body: { requestId: target.requestId } });
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }
+}
+
+function cancelPendings(list) {
+  for (const p of list) {
+    if (p.kind === 'compare') p.cols.filter((col) => col.state === 'pending').forEach(cancelTarget);
+    else cancelTarget(p);
+  }
+}
+
+// Échap annule les envois en cours de la session affichée, si rien d'autre n'est ouvert.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || e.defaultPrevented) return;
+  if (document.querySelector('dialog[open]') || !menu.hidden) return;
+  if (!memoryPanel.hidden && memoryPanel.contains(document.activeElement)) return;
+  if (narrow.matches && sidebar.classList.contains('open')) return;
+  const mine = pendings.filter((p) => p.sessionId === currentSessionId);
+  if (!mine.length) return;
+  e.preventDefault();
+  cancelPendings(mine);
+});
+
 function setSending(on) {
   sending = on;
   sendButton.disabled = on;
@@ -937,11 +1003,11 @@ async function afterSend() {
 }
 
 async function sendSingle(prompt, sessionId, relayNow) {
-  const pending = { kind: 'single', sessionId, prompt, cliId: selectedCli, start: Date.now(), relay: relayNow };
+  const pending = { kind: 'single', sessionId, prompt, cliId: selectedCli, start: Date.now(), relay: relayNow, requestId: uid() };
   pendings.push(pending);
   renderThread();
   try {
-    const body = { prompt, cli: pending.cliId, sessionId };
+    const body = { prompt, cli: pending.cliId, sessionId, requestId: pending.requestId };
     if (relayNow) Object.assign(body, { relayFrom: relayNow.relayFrom, relayKind: relayNow.relayKind });
     historyEntries.unshift(await apiStream('/api/ask', body, (event) => {
       if (event.type === 'delta') onLiveDelta(pending, event.text);
@@ -964,18 +1030,18 @@ async function sendSingle(prompt, sessionId, relayNow) {
 async function sendCompare(prompt, targets, sessionId) {
   const start = Date.now();
   const compareId = uid();
-  const pending = { kind: 'compare', sessionId, prompt, cols: targets.map((cliId) => ({ cliId, state: 'pending', start })) };
+  const pending = { kind: 'compare', sessionId, prompt, cols: targets.map((cliId) => ({ cliId, state: 'pending', start, requestId: uid() })) };
   pendings.push(pending);
   renderThread();
   const failures = [];
   await Promise.all(pending.cols.map(async (col) => {
     try {
-      const entry = await apiStream('/api/compare', { prompt, clis: targets, only: col.cliId, compareId, sessionId }, (event) => {
+      const entry = await apiStream('/api/compare', { prompt, clis: targets, only: col.cliId, compareId, sessionId, requestId: col.requestId }, (event) => {
         if (event.type === 'delta') onLiveDelta(col, event.text);
       });
       historyEntries.unshift(entry);
       col.entry = entry;
-      col.state = entry.ok === false ? 'fail' : 'done';
+      col.state = entryState(entry);
     } catch (err) {
       col.entry = { ok: false, cli: cliName(col.cliId), cliId: col.cliId, erreur: { message: err.message, action: 'Réessayez la comparaison.' } };
       col.state = 'fail';

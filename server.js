@@ -64,6 +64,30 @@ function relayOf(body) {
   };
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// HM-10 : envois en cours, annulables par le requestId choisi par la page.
+const running = new Map();
+
+function track(req, res) {
+  const id = String(req.body?.requestId || '');
+  const controller = new AbortController();
+  if (UUID_RE.test(id)) running.set(id, controller);
+  // Page fermée ou connexion coupée : on arrête la CLI au lieu de la laisser tourner.
+  res.on('close', () => {
+    running.delete(id);
+    if (!res.writableFinished) controller.abort();
+  });
+  return controller.signal;
+}
+
+app.post('/api/cancel', (req, res) => {
+  const controller = running.get(String(req.body?.requestId || ''));
+  if (!controller) return res.status(404).json({ error: 'Aucun envoi en cours avec cet identifiant.' });
+  controller.abort();
+  res.json({ cancelled: true });
+});
+
 // HM-09 : réponse en flux NDJSON (une ligne JSON par événement) quand la page demande stream: true.
 // Événements : attempt (une CLI commence), delta (texte reçu), done (échange enregistré).
 function eventStream(req, res) {
@@ -101,7 +125,9 @@ app.post('/api/ask', async (req, res) => {
   // Une relecture ne doit pas basculer vers l'IA qui a écrit la réponse relue.
   const exclude = relay?.relayKind === 'relecture' && relay.sourceId ? [relay.sourceId] : [];
   const send = eventStream(req, res);
+  const signal = track(req, res);
   const answer = await askWithFallback(cli, prompt, {
+    signal,
     cwd,
     simulateClaudeDown,
     exclude,
@@ -113,7 +139,6 @@ app.post('/api/ask', async (req, res) => {
   reply(res, send, history.add({ ...answer, ...link, prompt, sessionId: sessionFor(req.body) }));
 });
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 app.post('/api/compare', async (req, res) => {
   const prompt = String(req.body?.prompt || '').trim();
@@ -137,7 +162,8 @@ app.post('/api/compare', async (req, res) => {
   // En flux, une seule colonne par requête (only).
   const send = only ? eventStream(req, res) : null;
   const onDelta = send && ((text) => send({ type: 'delta', text }));
-  const answers = await Promise.all((only ? [only] : ids).map((id) => ask(id, prompt, { cwd, simulateClaudeDown, onDelta })));
+  const signal = track(req, res);
+  const answers = await Promise.all((only ? [only] : ids).map((id) => ask(id, prompt, { cwd, simulateClaudeDown, onDelta, signal })));
   const entries = answers.map((answer) => history.add({ ...answer, prompt, compareId, sessionId }));
   if (send) return reply(res, send, entries[0]);
   res.json(entries);
