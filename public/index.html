@@ -26,12 +26,25 @@
     </aside>
 
     <main class="main">
+      <div id="sim-banner" class="sim-banner" hidden>
+        <span>⚠ Panne de Claude Code simulée (réglage de démo) : chaque appel à Claude Code échoue volontairement.</span>
+        <button type="button" id="sim-off">Désactiver</button>
+      </div>
+
       <form id="workdir-form" class="workdir-bar">
         <label for="workdir">Dossier de travail</label>
         <input type="text" id="workdir" placeholder="C:\Users\moi\projets\mon-projet" spellcheck="false">
         <button type="submit">Valider</button>
         <span id="workdir-status" class="status"></span>
       </form>
+
+      <div class="options-bar">
+        <label class="toggle" title="Si la CLI choisie échoue (quota, non connectée, absente, délai, plantage), le prompt part vers la suivante"><input type="checkbox" id="fallback-toggle"> Bascule automatique</label>
+        <span class="order-label">Ordre :</span>
+        <ol id="fallback-order" class="fallback-order"></ol>
+        <label class="sim-toggle"><input type="checkbox" id="simulate-toggle"> Simuler une panne de Claude Code</label>
+        <span id="options-status" class="status"></span>
+      </div>
 
       <section id="tab-chat" class="tab">
         <form id="ask-form" class="ask-form">

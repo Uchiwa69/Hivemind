@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
 const express = require('express');
-const { CLIS, listClis, detect, ask } = require('./lib/clis');
+const { CLIS, listClis, detect, ask, askWithFallback } = require('./lib/clis');
 const history = require('./lib/history');
 const settings = require('./lib/settings');
 const sync = require('./lib/sync');
@@ -49,7 +49,9 @@ app.post('/api/ask', async (req, res) => {
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
-  const answer = await ask(cli, prompt, { cwd });
+  await detection;
+  const { fallback, fallbackOrder, simulateClaudeDown } = settings.get();
+  const answer = await askWithFallback(cli, prompt, { cwd, simulateClaudeDown, order: fallback ? fallbackOrder : [] });
   res.json(history.add({ ...answer, prompt }));
 });
 
@@ -66,7 +68,8 @@ app.post('/api/compare', async (req, res) => {
     return res.status(400).json({ error: err.message });
   }
   const compareId = crypto.randomUUID();
-  const answers = await Promise.all(ids.map((id) => ask(id, prompt, { cwd })));
+  const { simulateClaudeDown } = settings.get();
+  const answers = await Promise.all(ids.map((id) => ask(id, prompt, { cwd, simulateClaudeDown })));
   res.json(answers.map((answer) => history.add({ ...answer, prompt, compareId })));
 });
 
@@ -101,9 +104,12 @@ app.get('/api/settings', (req, res) => {
   res.json({ ...settings.get(), defaultCwd: os.homedir() });
 });
 
+// Corps partiel : seuls les réglages envoyés sont modifiés.
 app.put('/api/settings', (req, res) => {
+  const body = req.body || {};
   try {
-    res.json({ ...settings.setWorkdir(req.body?.workdir), defaultCwd: os.homedir() });
+    if (Object.hasOwn(body, 'workdir')) settings.setWorkdir(body.workdir);
+    res.json({ ...settings.setOptions(body), defaultCwd: os.homedir() });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

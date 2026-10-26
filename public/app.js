@@ -27,14 +27,31 @@ function formatDuree(ms) {
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
 
+// « de Claude Code », « d'Antigravity CLI ».
+function de(name) {
+  return /^[aeiouyéèh]/i.test(name) ? `d'${name}` : `de ${name}`;
+}
+
+// HM-23 : « Claude Code indisponible (quota atteint) → réponse d'Antigravity CLI ».
+function fallbackNote(entry) {
+  const failed = entry.bascule.map((b) => `${b.cli} indisponible (${b.motif})`).join(', ');
+  return el('p', 'fallback-note', `${failed} → réponse ${de(entry.cliUtilisee || entry.cli)}`);
+}
+
 function renderAnswer(entry, { showPrompt = true } = {}) {
   const box = el('div', entry.ok === false ? 'answer error' : 'answer');
   const head = el('div', 'answer-head');
   head.append(el('strong', '', entry.cli), el('span', '', formatDuree(entry.dureeMs)));
   box.append(head);
   if (showPrompt && entry.prompt) box.append(el('div', 'prompt-echo', `› ${entry.prompt}`));
+  if (entry.ok && entry.bascule?.length) box.append(fallbackNote(entry));
   if (entry.erreur) {
     box.append(el('p', 'err-message', entry.erreur.message), el('p', 'err-action', `→ ${entry.erreur.action}`));
+    if (entry.bascule?.length) {
+      const list = el('ul', 'fail-list');
+      list.append(...entry.bascule.map((b) => el('li', '', `${b.cli} (${b.motif}) : ${b.message} → ${b.action}`)));
+      box.append(list);
+    }
     if (entry.erreur.detail) {
       const details = el('details', 'err-detail');
       details.append(el('summary', '', 'Détail technique'), el('pre', '', entry.erreur.detail));
@@ -87,6 +104,10 @@ function renderHistory(active) {
     const meta = el('div', 'h-meta');
     const cliLabel = el('span', entry.ok === false ? 'bad' : '', entry.cli);
     if (entry.compareId) cliLabel.prepend(el('span', 'h-tag', 'comparer'));
+    if (entry.ok && entry.bascule?.length) {
+      cliLabel.prepend(el('span', 'h-tag', 'bascule'));
+      cliLabel.title = `Demandé à ${entry.cliDemandee}, répondu par ${entry.cliUtilisee}`;
+    }
     meta.append(cliLabel, el('span', '', formatDate(entry.date)));
     li.append(meta, el('div', 'h-prompt', entry.prompt));
     li.title = entry.prompt;
@@ -150,6 +171,8 @@ function renderClis() {
     label.append(box, ` ${cli.name}${cli.available ? '' : ' (absente)'}`);
     return label;
   }));
+
+  renderOrder();
 
   cliStatusList.replaceChildren(...clis.map((cli) => {
     const li = el('li', cli.available ? 'on' : 'off', cli.name);
@@ -320,18 +343,73 @@ function showWorkdir(settings) {
   else setStatus(workdirStatus, `Aucun dossier choisi : les CLI travaillent dans ${settings.defaultCwd}`);
 }
 
+function applySettings(settings) {
+  showWorkdir(settings);
+  showOptions(settings);
+}
+
 async function loadSettings() {
-  showWorkdir(await api('/api/settings'));
+  applySettings(await api('/api/settings'));
 }
 
 workdirForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
-    showWorkdir(await api('/api/settings', { method: 'PUT', body: { workdir: workdirInput.value } }));
+    applySettings(await api('/api/settings', { method: 'PUT', body: { workdir: workdirInput.value } }));
   } catch (err) {
     setStatus(workdirStatus, err.message, 'err');
   }
 });
+
+// --- Bascule automatique et panne simulée (HM-23) ---
+const fallbackToggle = $('#fallback-toggle');
+const fallbackOrderList = $('#fallback-order');
+const simulateToggle = $('#simulate-toggle');
+const simBanner = $('#sim-banner');
+const optionsStatus = $('#options-status');
+let fallbackOrder = [];
+
+function showOptions(settings) {
+  fallbackToggle.checked = settings.fallback;
+  simulateToggle.checked = settings.simulateClaudeDown;
+  simBanner.hidden = !settings.simulateClaudeDown;
+  fallbackOrder = settings.fallbackOrder;
+  renderOrder();
+}
+
+function renderOrder() {
+  fallbackOrderList.classList.toggle('disabled', !fallbackToggle.checked);
+  fallbackOrderList.replaceChildren(...fallbackOrder.map((id, index) => {
+    const cli = clis.find((c) => c.id === id);
+    const li = el('li', cli && cli.available === false ? 'off' : '', cli ? cli.name : id);
+    if (cli && cli.available === false) li.title = 'Absente : sautée lors de la bascule';
+    if (index > 0) {
+      const up = el('button', '', '◀');
+      up.type = 'button';
+      up.title = 'Essayer plus tôt';
+      up.addEventListener('click', () => {
+        const next = [...fallbackOrder];
+        [next[index - 1], next[index]] = [next[index], next[index - 1]];
+        saveOptions({ fallbackOrder: next });
+      });
+      li.append(up);
+    }
+    return li;
+  }));
+}
+
+async function saveOptions(patch) {
+  try {
+    showOptions(await api('/api/settings', { method: 'PUT', body: patch }));
+    setStatus(optionsStatus, '');
+  } catch (err) {
+    setStatus(optionsStatus, err.message, 'err');
+  }
+}
+
+fallbackToggle.addEventListener('change', () => saveOptions({ fallback: fallbackToggle.checked }));
+simulateToggle.addEventListener('change', () => saveOptions({ simulateClaudeDown: simulateToggle.checked }));
+$('#sim-off').addEventListener('click', () => saveOptions({ simulateClaudeDown: false }));
 
 loadClis();
 loadHistory();
