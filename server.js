@@ -1,6 +1,7 @@
 const path = require('path');
 const express = require('express');
 const { CLIS, listClis, ask } = require('./lib/clis');
+const history = require('./lib/history');
 
 const HOST = '127.0.0.1';
 const PORT = 3000;
@@ -18,7 +19,12 @@ app.post('/api/ask', async (req, res) => {
   const cli = String(req.body?.cli || '');
   if (!prompt) return res.status(400).json({ error: 'Le prompt est vide.' });
   if (!Object.hasOwn(CLIS, cli)) return res.status(400).json({ error: 'CLI inconnue.' });
-  res.json(await ask(cli, prompt));
+  const answer = await ask(cli, prompt);
+  res.json(history.add({ ...answer, prompt }));
+});
+
+app.get('/api/history', (req, res) => {
+  res.json(history.list());
 });
 
 app.listen(PORT, HOST, () => {

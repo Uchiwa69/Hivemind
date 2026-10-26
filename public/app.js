@@ -26,8 +26,47 @@ function renderAnswer(entry) {
   const box = el('div', entry.ok === false ? 'answer error' : 'answer');
   const head = el('div', 'answer-head');
   head.append(el('strong', '', entry.cli), el('span', '', formatDuree(entry.dureeMs)));
-  box.append(head, el('pre', '', entry.reponse));
+  box.append(head);
+  if (entry.prompt) box.append(el('div', 'prompt-echo', `› ${entry.prompt}`));
+  box.append(el('pre', '', entry.reponse));
   return box;
+}
+
+// --- Historique ---
+const historyList = $('#history-list');
+let historyEntries = [];
+
+function formatDate(iso) {
+  return new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function renderHistory(activeId) {
+  if (!historyEntries.length) {
+    historyList.replaceChildren(el('li', 'history-empty', 'Aucun échange pour le moment.'));
+    return;
+  }
+  historyList.replaceChildren(...historyEntries.map((entry) => {
+    const li = el('li', entry.id === activeId ? 'active' : '');
+    const meta = el('div', 'h-meta');
+    meta.append(el('span', entry.ok === false ? 'bad' : '', entry.cli), el('span', '', formatDate(entry.date)));
+    li.append(meta, el('div', 'h-prompt', entry.prompt));
+    li.title = entry.prompt;
+    li.addEventListener('click', () => {
+      result.replaceChildren(renderAnswer(entry));
+      renderHistory(entry.id);
+    });
+    return li;
+  }));
+}
+
+async function loadHistory() {
+  historyEntries = await api('/api/history');
+  renderHistory();
+}
+
+function addToHistory(entries) {
+  historyEntries = [...entries, ...historyEntries];
+  renderHistory(entries.length === 1 ? entries[0].id : undefined);
 }
 
 // --- Choix de la CLI ---
@@ -64,6 +103,7 @@ form.addEventListener('submit', async (e) => {
   try {
     const entry = await api('/api/ask', { method: 'POST', body: { prompt, cli: cliSelect.value } });
     result.replaceChildren(renderAnswer(entry));
+    addToHistory([entry]);
   } catch (err) {
     result.replaceChildren(renderAnswer({ ok: false, cli: 'Hivemind', reponse: err.message, dureeMs: 0 }));
   } finally {
@@ -72,3 +112,4 @@ form.addEventListener('submit', async (e) => {
 });
 
 loadClis();
+loadHistory();
