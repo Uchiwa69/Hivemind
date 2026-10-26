@@ -30,6 +30,18 @@ function renderAnswer(entry) {
   return box;
 }
 
+// --- Choix de la CLI ---
+const cliSelect = $('#cli-select');
+
+async function loadClis() {
+  const clis = await api('/api/clis');
+  cliSelect.replaceChildren(...clis.map((cli) => {
+    const option = el('option', '', cli.name);
+    option.value = cli.id;
+    return option;
+  }));
+}
+
 // --- Envoi d'un prompt ---
 const form = $('#ask-form');
 const promptInput = $('#prompt');
@@ -50,7 +62,7 @@ form.addEventListener('submit', async (e) => {
   send.disabled = true;
   result.replaceChildren(el('p', 'pending', 'La CLI réfléchit… (jusqu\'à 3 min)'));
   try {
-    const entry = await api('/api/ask', { method: 'POST', body: { prompt } });
+    const entry = await api('/api/ask', { method: 'POST', body: { prompt, cli: cliSelect.value } });
     result.replaceChildren(renderAnswer(entry));
   } catch (err) {
     result.replaceChildren(renderAnswer({ ok: false, cli: 'Hivemind', reponse: err.message, dureeMs: 0 }));
@@ -58,3 +70,5 @@ form.addEventListener('submit', async (e) => {
     send.disabled = false;
   }
 });
+
+loadClis();

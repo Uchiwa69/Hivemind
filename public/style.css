@@ -71,6 +71,13 @@ button.primary, #send { background: var(--accent); color: var(--accent-text); bo
   resize: vertical;
 }
 .ask-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
+.ask-actions select, input[type="text"] {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  margin-left: 6px;
+}
 
 .answer {
   margin-top: 16px;
