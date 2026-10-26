@@ -448,7 +448,75 @@ let localErrors = []; // échecs sans échange enregistré (serveur injoignable,
 
 const SUGGESTIONS = ['Résume ce projet', 'Liste les fichiers du dossier de travail', 'Quelles décisions sont dans la mémoire ?'];
 
+// Une commande à taper dans un terminal, avec un bouton Copier.
+function commandLine(command) {
+  const row = el('div', 'command');
+  const code = el('code', '', command);
+  const copy = button('btn btn-small', 'Copier', async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      copy.textContent = 'Copié';
+      setTimeout(() => { copy.textContent = 'Copier'; }, 1500);
+    } catch {
+      toast('Copie impossible : sélectionnez la commande à la main.', 'err');
+    }
+  });
+  copy.setAttribute('aria-label', `Copier la commande ${command}`);
+  row.append(code, copy);
+  return row;
+}
+
+function setupCard(cliId, title, steps) {
+  const card = paint(el('section', 'setup-card'), cliId);
+  const head = el('h3');
+  head.append(dot(cliId), title);
+  const list = el('ol');
+  list.append(...steps.map(([text, command, link]) => {
+    const li = el('li');
+    const p = el('p', '', text);
+    if (link) {
+      const a = el('a', '', link.label);
+      a.href = link.href;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      p.append(' ', a, '.');
+    }
+    li.append(p);
+    if (command) li.append(commandLine(command));
+    return li;
+  }));
+  card.append(head, list);
+  return card;
+}
+
+// HM-25 : page « Bienvenue » quand aucune CLI n'est détectée (typiquement au premier lancement installé).
+function renderOnboarding() {
+  const box = el('section', 'welcome onboarding');
+  box.append(
+    el('h2', '', 'Bienvenue dans Hivemind'),
+    el('p', '', 'Aucune IA en ligne de commande n\'a été détectée sur cet ordinateur. Installez-en au moins une, connectez-vous une fois, puis cliquez sur « Rafraîchir ».'),
+    el('p', 'onboarding-hint', 'Pour ouvrir un terminal : touche Windows, tapez « Terminal », puis Entrée.'),
+  );
+  const cards = el('div', 'setup-cards');
+  cards.append(
+    setupCard('claude', 'Claude Code', [
+      ['Installez Claude Code :', 'winget install Anthropic.ClaudeCode'],
+      ['Ouvrez un nouveau terminal et connectez-vous à votre compte (une seule fois) :', 'claude'],
+      ['Vérifiez que la commande répond :', 'claude --version'],
+    ]),
+    setupCard('agy', 'Antigravity CLI', [
+      ['Installez Antigravity et sa CLI (agy) en suivant le site officiel :', '', { label: 'antigravity.google', href: 'https://antigravity.google' }],
+      ['Ouvrez un nouveau terminal et connectez-vous à votre compte (une seule fois) :', 'agy'],
+      ['Vérifiez que la commande répond :', 'agy --version'],
+    ]),
+  );
+  const again = button('btn btn-primary', 'Rafraîchir la détection', () => loadClis(true).then(() => renderThread()).catch((err) => toast(err.message, 'err')));
+  box.append(cards, again, el('p', 'onboarding-hint', 'Toujours rien ? Fermez la fenêtre Hivemind, puis relancez-le depuis le menu Démarrer.'));
+  return box;
+}
+
 function renderWelcome() {
+  if (clis.length && !clis.some((cli) => cli.available)) return renderOnboarding();
   const box = el('section', 'welcome');
   box.append(
     el('h2', '', 'Que voulez-vous faire ?'),
@@ -1226,6 +1294,8 @@ async function loadClis(refresh = false) {
   try {
     clis = await api(refresh ? '/api/clis/refresh' : '/api/clis', refresh ? { method: 'POST' } : {});
     renderClis();
+    // L'accueil dépend des IA détectées (page « Bienvenue » si aucune).
+    if (!currentSessionId && !pendings.length) renderThread({ scroll: false });
   } finally {
     refreshButton.disabled = false;
     refreshButton.textContent = 'Rafraîchir';
@@ -1618,6 +1688,51 @@ $('#usage-reset').addEventListener('click', async () => {
 simulateToggle.addEventListener('change', () => saveOptions({ simulateClaudeDown: simulateToggle.checked }));
 $('#sim-off').addEventListener('click', () => saveOptions({ simulateClaudeDown: false }));
 
+// --- Premier lancement de l'application installée : import d'un data/ existant (HM-25) ---
+const importDialog = $('#import-dialog');
+const importStatus = $('#import-status');
+
+async function offerImport() {
+  const info = await api('/api/app');
+  if (!info.importCandidates.length) return;
+  $('#import-list').replaceChildren(el('legend', 'sr-only', 'Dossier à importer'), ...info.importCandidates.map((dir, i) => {
+    const label = el('label', 'import-choice');
+    const radio = el('input');
+    radio.type = 'radio';
+    radio.name = 'import-dir';
+    radio.value = dir;
+    radio.checked = i === 0;
+    label.append(radio, el('code', '', dir));
+    return label;
+  }));
+  setStatus(importStatus, `Les données seront copiées dans ${info.dataDir}. Le dossier d'origine n'est pas modifié.`);
+  importDialog.showModal();
+}
+
+$('#import-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const dir = importDialog.querySelector('input[name="import-dir"]:checked')?.value;
+  const ok = $('#import-ok');
+  ok.disabled = true;
+  try {
+    const { copied } = await api('/api/import', { method: 'POST', body: { dir } });
+    importDialog.close();
+    toast(`Données importées (${copied.join(', ')}). Rechargement…`);
+    setTimeout(() => window.location.reload(), 1200);
+  } catch (err) {
+    setStatus(importStatus, err.message, 'err');
+  } finally {
+    ok.disabled = false;
+  }
+});
+
+$('#import-skip').addEventListener('click', async () => {
+  importDialog.close();
+  try {
+    await api('/api/import/skip', { method: 'POST' });
+  } catch { /* la question reviendra au prochain lancement */ }
+});
+
 // --- Démarrage ---
 (async () => {
   const steps = [loadClis(), loadSettings(), loadMemory(), loadUsage(), loadHistory().then(loadSessions)];
@@ -1629,4 +1744,5 @@ $('#sim-off').addEventListener('click', () => saveOptions({ simulateClaudeDown: 
   renderThread();
   autosize();
   promptInput.focus();
+  offerImport().catch(() => {});
 })();

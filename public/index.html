@@ -206,6 +206,21 @@
     </form>
   </dialog>
 
+  <!-- Premier lancement de l'application installée : import d'un data/ existant (HM-25) -->
+  <dialog id="import-dialog" class="modal" aria-labelledby="import-title">
+    <form id="import-form">
+      <h2 id="import-title">Importer vos données Hivemind ?</h2>
+      <p class="modal-text">Des données d'une version développeur de Hivemind ont été trouvées. Importez-les pour retrouver votre historique, vos sessions, votre mémoire et vos réglages.</p>
+      <fieldset class="import-list" id="import-list"></fieldset>
+      <p id="import-status" class="status" role="status"></p>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button type="button" id="import-skip" class="btn">Ne pas importer</button>
+        <button type="submit" id="import-ok" class="btn btn-primary">Importer</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="menu" class="menu" role="menu" hidden></div>
   <div id="toasts" class="toasts" aria-live="polite"></div>
 

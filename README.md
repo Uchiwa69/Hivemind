@@ -16,16 +16,30 @@
 
 ## 0. Installer et lancer Hivemind
 
-*Section remplie par l'IA à la fin du Sprint 1 (HM-04).*
+*Section remplie par l'IA à la fin du Sprint 1 (HM-04), mise à jour au Sprint 5 (HM-25 : installateur Windows).*
+
+**Option A — Installateur Windows (recommandé, sans Node.js ni terminal)**
+
+| Rubrique | À remplir |
+|---|---|
+| Téléchargement | [`HivemindSetup-1.0.0.exe`](https://github.com/Uchiwa69/Hivemind/releases/tag/v1.0.0) (Release v1.0.0 sur GitHub) |
+| Installation | Lancez `HivemindSetup-1.0.0.exe`, choisissez « pour tous les utilisateurs » ou « pour moi uniquement », cochez si besoin le raccourci sur le bureau. L'installateur n'est pas signé : si Windows SmartScreen s'affiche, cliquez **Informations complémentaires** → **Exécuter quand même**. |
+| Lancement | Menu Démarrer → **Hivemind** : le serveur démarre (fenêtre réduite dans la barre des tâches) et `http://127.0.0.1:3000` s'ouvre dans le navigateur. Relancer Hivemind alors qu'il tourne rouvre simplement la page. Fermer la fenêtre Hivemind l'arrête. |
+| Données | `%APPDATA%\Hivemind` (historique, sessions, mémoire, réglages, compteurs). Au premier lancement, Hivemind propose d'importer un dossier `data/` existant de la version développeur. La désinstallation conserve ces données. |
+| Désinstallation | Paramètres Windows → **Applications installées** → Hivemind → Désinstaller. |
+| Prérequis | Windows 10/11 64 bits · au moins une CLI d'IA installée **et connectée** (si aucune n'est détectée, la page « Bienvenue » donne les commandes d'installation). |
+
+**Option B — Installation développeur**
 
 | Rubrique | À remplir |
 |---|---|
 | Prérequis (Node.js / Python, version) | Node.js LTS (20 ou plus, testé avec 24) · Windows + PowerShell · au moins une CLI d'IA installée **et connectée** (dans le `PATH`) |
-| CLI pilotées (au moins 2 connectées sur le poste de démo) | Claude Code : `claude -p "<prompt>"` (lit `CLAUDE.md`) · Codex CLI : `codex exec --skip-git-repo-check "<prompt>"` (lit `AGENTS.md`) · Antigravity CLI : `agy -p "<prompt>"` (lit `GEMINI.md`) · Gemini CLI : `gemini -p "<prompt>"` (lit `GEMINI.md`). Sur le poste de démo : Claude Code, Antigravity / Gemini ; Codex non installé (affiché « absente », sans planter) |
+| CLI pilotées (au moins 2 connectées sur le poste de démo) | Claude Code : `claude -p --output-format stream-json --verbose --include-partial-messages "<prompt>"` (lit `CLAUDE.md`) · Codex CLI : `codex exec --skip-git-repo-check "<prompt>"` (lit `AGENTS.md`) · Antigravity CLI : `agy -p "<prompt>"` (lit `GEMINI.md`) · Gemini CLI : `gemini -p "<prompt>"` (lit `GEMINI.md`). Sur le poste de démo : Claude Code, Antigravity / Gemini ; Codex non installé (affiché « absente », sans planter) |
 | Installation (commande) | `npm install` (dans le dossier du projet) |
 | Lancement (une seule commande) | `npm start` |
 | Adresse dans le navigateur | `http://127.0.0.1:3000` (le serveur n'écoute que sur la machine locale) |
-| À savoir | Lancez Hivemind dans **votre propre terminal**, pas via un agent Claude Code (sinon `claude -p` refuse de démarrer : sessions imbriquées). Connectez chaque CLI une fois dans un terminal avant (ex. lancer `claude`). Les données (historique, mémoire, réglages) restent en local dans `data/`, ignoré par Git. Si le port 3000 est pris, Hivemind tourne sûrement déjà ailleurs. |
+| Construire l'installateur | `npm run build:installer` (Windows, Inno Setup 6 requis : `winget install JRSoftware.InnoSetup`) → `dist/Hivemind.exe` et `dist/HivemindSetup-<version>.exe` ; `dist/` est ignoré par Git |
+| À savoir | Lancez Hivemind dans **votre propre terminal**, pas via un agent Claude Code (sinon `claude -p` refuse de démarrer : sessions imbriquées). Connectez chaque CLI une fois dans un terminal avant (ex. lancer `claude`). En mode développeur, les données restent en local dans `data/`, ignoré par Git. Si le port 3000 est pris par Hivemind, il tourne déjà ailleurs. |
 
 ---
 

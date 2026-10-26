@@ -9,16 +9,23 @@ const usage = require('./lib/usage');
 const settings = require('./lib/settings');
 const sync = require('./lib/sync');
 const { addDecision } = require('./lib/decisions');
-const { readText, writeText } = require('./lib/store');
+const { DATA_DIR, readText, writeText } = require('./lib/store');
+const { isPackaged } = require('./lib/paths');
+const importer = require('./lib/importer');
+const desktop = require('./lib/desktop');
+const { version: VERSION } = require('./package.json');
 
 const MEMORY_FILE = 'memory.md';
 
 const HOST = '127.0.0.1';
-const PORT = 3000;
+// HIVEMIND_PORT ne sert qu'aux tests ; l'adresse normale reste http://127.0.0.1:3000.
+const PORT = Number(process.env.HIVEMIND_PORT) || 3000;
+const URL = `http://${HOST}:${PORT}`;
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+// HM-25 : dans l'exécutable, public/ est embarqué ; en mode développeur, il est lu sur le disque.
+app.use(isPackaged ? desktop.embeddedStatic() : express.static(path.join(__dirname, 'public')));
 
 // Dossier où tournent les CLI : le dossier de travail choisi, sinon le dossier personnel.
 function cliCwd() {
@@ -29,9 +36,12 @@ function cliCwd() {
 }
 
 // HM-22 : les échanges d'avant les sessions sont rangés une fois pour toutes dans « Historique importé ».
-if (history.list().some((entry) => !entry.sessionId)) {
-  history.migrate(sessions.ensureImported().id);
+function migrateSessions() {
+  if (history.list().some((entry) => !entry.sessionId)) {
+    history.migrate(sessions.ensureImported().id);
+  }
 }
+migrateSessions();
 
 // La session demandée si elle existe, sinon une nouvelle.
 function sessionFor(body) {
@@ -48,6 +58,8 @@ app.get('/api/clis', async (req, res) => {
 });
 
 app.post('/api/clis/refresh', async (req, res) => {
+  // Une CLI installée pendant que Hivemind tourne doit être trouvée sans relancer (HM-25).
+  await desktop.refreshPath();
   detection = detect();
   res.json(await detection);
 });
@@ -320,6 +332,32 @@ app.put('/api/settings', (req, res) => {
   }
 });
 
+// --- Application (HM-25) ---
+// Permet à un second lancement de reconnaître un Hivemind déjà ouvert.
+app.get('/api/health', (req, res) => {
+  res.json({ app: 'hivemind', version: VERSION });
+});
+
+app.get('/api/app', (req, res) => {
+  res.json({ version: VERSION, packaged: isPackaged, dataDir: DATA_DIR, importCandidates: isPackaged ? importer.offer() : [] });
+});
+
+app.post('/api/import', (req, res) => {
+  if (!isPackaged) return res.status(400).json({ error: 'L\'import ne sert qu\'à l\'application installée.' });
+  try {
+    const copied = importer.importFrom(req.body?.dir);
+    migrateSessions();
+    res.json({ copied });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/import/skip', (req, res) => {
+  importer.markDone();
+  res.json({ skipped: true });
+});
+
 app.use('/api', (req, res) => {
   res.status(404).json({ error: 'Action inconnue.' });
 });
@@ -336,15 +374,37 @@ app.use((err, req, res, next) => {
 process.on('uncaughtException', (err) => console.error('Erreur inattendue (Hivemind continue) :', err));
 process.on('unhandledRejection', (err) => console.error('Erreur inattendue (Hivemind continue) :', err));
 
+// Le port est pris : est-ce un Hivemind déjà lancé ?
+async function alreadyRunning() {
+  try {
+    const res = await fetch(`${URL}/api/health`, { signal: AbortSignal.timeout(2000) });
+    return (await res.json()).app === 'hivemind';
+  } catch {
+    return false;
+  }
+}
+
+const openOnStart = isPackaged && !process.env.HIVEMIND_NO_OPEN;
+process.title = 'Hivemind';
+
 // Express 5 appelle ce callback aussi en cas d'erreur d'écoute.
-app.listen(PORT, HOST, (err) => {
+app.listen(PORT, HOST, async (err) => {
   if (err) {
-    if (err.code === 'EADDRINUSE') {
-      console.error(`Le port ${PORT} est déjà utilisé : Hivemind tourne peut-être déjà dans un autre terminal (http://${HOST}:${PORT}).`);
-    } else {
-      console.error(`Impossible de démarrer Hivemind : ${err.message}`);
+    if (err.code === 'EADDRINUSE' && await alreadyRunning()) {
+      // HM-25 : relancer l'application ouvre simplement la page déjà servie.
+      console.log(`Hivemind tourne déjà : ${URL}`);
+      if (openOnStart) desktop.openBrowser(URL);
+      process.exit(isPackaged ? 0 : 1);
     }
+    await desktop.showError(err.code === 'EADDRINUSE'
+      ? `Le port ${PORT} est déjà utilisé par un autre programme : Hivemind ne peut pas démarrer. Fermez ce programme puis relancez Hivemind.`
+      : `Impossible de démarrer Hivemind : ${err.message}`);
     process.exit(1);
   }
-  console.log(`Hivemind démarré : ouvrez http://${HOST}:${PORT} dans votre navigateur (Ctrl+C pour arrêter).`);
+  if (isPackaged) {
+    console.log(`Hivemind ${VERSION} tourne sur ${URL}\nDonnées : ${DATA_DIR}\nFermez cette fenêtre pour arrêter Hivemind.`);
+    if (openOnStart) desktop.openBrowser(URL);
+  } else {
+    console.log(`Hivemind démarré : ouvrez ${URL} dans votre navigateur (Ctrl+C pour arrêter).`);
+  }
 });
