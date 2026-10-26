@@ -37,9 +37,11 @@
         <form id="ask-form" class="ask-form">
           <textarea id="prompt" rows="4" placeholder="Votre prompt… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)" required></textarea>
           <div class="ask-actions">
-            <label>CLI cible
+            <label class="toggle"><input type="checkbox" id="compare-toggle"> Comparer</label>
+            <label id="single-cli">CLI cible
               <select id="cli-select"></select>
             </label>
+            <div id="compare-clis" class="compare-clis" hidden></div>
             <button type="submit" id="send">Envoyer</button>
           </div>
         </form>

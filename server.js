@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
 const express = require('express');
@@ -50,6 +51,23 @@ app.post('/api/ask', async (req, res) => {
   }
   const answer = await ask(cli, prompt, { cwd });
   res.json(history.add({ ...answer, prompt }));
+});
+
+app.post('/api/compare', async (req, res) => {
+  const prompt = String(req.body?.prompt || '').trim();
+  const ids = [...new Set(Array.isArray(req.body?.clis) ? req.body.clis.map(String) : [])];
+  if (!prompt) return res.status(400).json({ error: 'Le prompt est vide.' });
+  if (ids.some((id) => !Object.hasOwn(CLIS, id))) return res.status(400).json({ error: 'CLI inconnue.' });
+  if (ids.length < 2) return res.status(400).json({ error: 'Cochez au moins 2 CLI pour comparer.' });
+  let cwd;
+  try {
+    cwd = cliCwd();
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  const compareId = crypto.randomUUID();
+  const answers = await Promise.all(ids.map((id) => ask(id, prompt, { cwd })));
+  res.json(answers.map((answer) => history.add({ ...answer, prompt, compareId })));
 });
 
 app.get('/api/history', (req, res) => {

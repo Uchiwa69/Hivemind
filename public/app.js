@@ -22,14 +22,34 @@ function formatDuree(ms) {
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
 
-function renderAnswer(entry) {
+function renderAnswer(entry, { showPrompt = true } = {}) {
   const box = el('div', entry.ok === false ? 'answer error' : 'answer');
   const head = el('div', 'answer-head');
   head.append(el('strong', '', entry.cli), el('span', '', formatDuree(entry.dureeMs)));
   box.append(head);
-  if (entry.prompt) box.append(el('div', 'prompt-echo', `› ${entry.prompt}`));
+  if (showPrompt && entry.prompt) box.append(el('div', 'prompt-echo', `› ${entry.prompt}`));
   box.append(el('pre', '', entry.reponse));
   return box;
+}
+
+// Réponses d'un même prompt, en colonnes.
+function renderCompare(entries) {
+  const wrap = el('div', 'compare');
+  wrap.append(el('div', 'prompt-echo', `› ${entries[0].prompt}`));
+  const grid = el('div', 'compare-grid');
+  grid.append(...entries.map((entry) => renderAnswer(entry, { showPrompt: false })));
+  wrap.append(grid);
+  return wrap;
+}
+
+function showEntry(entry) {
+  if (entry.compareId) {
+    // L'historique est du plus récent au plus ancien : on remet l'ordre d'envoi.
+    const group = historyEntries.filter((e) => e.compareId === entry.compareId).reverse();
+    result.replaceChildren(renderCompare(group));
+  } else {
+    result.replaceChildren(renderAnswer(entry));
+  }
 }
 
 // --- Historique ---
@@ -40,20 +60,25 @@ function formatDate(iso) {
   return new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
-function renderHistory(activeId) {
+// active : l'échange affiché ; tout son groupe « Comparer » est mis en évidence.
+function renderHistory(active) {
   if (!historyEntries.length) {
     historyList.replaceChildren(el('li', 'history-empty', 'Aucun échange pour le moment.'));
     return;
   }
+  const isActive = (entry) => Boolean(active)
+    && (entry.id === active.id || (active.compareId && entry.compareId === active.compareId));
   historyList.replaceChildren(...historyEntries.map((entry) => {
-    const li = el('li', entry.id === activeId ? 'active' : '');
+    const li = el('li', isActive(entry) ? 'active' : '');
     const meta = el('div', 'h-meta');
-    meta.append(el('span', entry.ok === false ? 'bad' : '', entry.cli), el('span', '', formatDate(entry.date)));
+    const cliLabel = el('span', entry.ok === false ? 'bad' : '', entry.cli);
+    if (entry.compareId) cliLabel.prepend(el('span', 'h-tag', 'comparer'));
+    meta.append(cliLabel, el('span', '', formatDate(entry.date)));
     li.append(meta, el('div', 'h-prompt', entry.prompt));
     li.title = entry.prompt;
     li.addEventListener('click', () => {
-      result.replaceChildren(renderAnswer(entry));
-      renderHistory(entry.id);
+      showEntry(entry);
+      renderHistory(entry);
     });
     return li;
   }));
@@ -64,13 +89,26 @@ async function loadHistory() {
   renderHistory();
 }
 
+// entries arrivent dans l'ordre d'envoi ; l'historique affiche le plus récent en haut.
 function addToHistory(entries) {
-  historyEntries = [...entries, ...historyEntries];
-  renderHistory(entries.length === 1 ? entries[0].id : undefined);
+  historyEntries = [...[...entries].reverse(), ...historyEntries];
+  renderHistory(entries[0]);
 }
 
 // --- Choix de la CLI et détection ---
 const cliSelect = $('#cli-select');
+const compareBox = $('#compare-clis');
+const compareToggle = $('#compare-toggle');
+
+function selectedCompareClis() {
+  return [...compareBox.querySelectorAll('input:checked')].map((box) => box.value);
+}
+
+compareToggle.addEventListener('change', () => {
+  const on = compareToggle.checked;
+  $('#single-cli').hidden = on;
+  compareBox.hidden = !on;
+});
 const cliStatusList = $('#cli-status-list');
 const refreshButton = $('#refresh-clis');
 let clis = [];
@@ -86,6 +124,18 @@ function renderClis() {
   const keep = clis.find((cli) => cli.id === previous && cli.available);
   const first = clis.find((cli) => cli.available);
   cliSelect.value = (keep || first || clis[0] || {}).id || '';
+
+  const checked = new Set(selectedCompareClis());
+  compareBox.replaceChildren(...clis.map((cli) => {
+    const label = el('label', cli.available ? '' : 'disabled');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.value = cli.id;
+    box.disabled = !cli.available;
+    box.checked = cli.available && (checked.size ? checked.has(cli.id) : true);
+    label.append(box, ` ${cli.name}${cli.available ? '' : ' (absente)'}`);
+    return label;
+  }));
 
   cliStatusList.replaceChildren(...clis.map((cli) => {
     const li = el('li', cli.available ? 'on' : 'off', cli.name);
@@ -124,13 +174,27 @@ form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const prompt = promptInput.value.trim();
   if (!prompt) return;
+  const compare = compareToggle.checked;
+  const targets = selectedCompareClis();
+  if (compare && targets.length < 2) {
+    result.replaceChildren(renderAnswer({ ok: false, cli: 'Hivemind', reponse: 'Cochez au moins 2 CLI disponibles pour comparer.', dureeMs: 0 }));
+    return;
+  }
   const send = $('#send');
   send.disabled = true;
-  result.replaceChildren(el('p', 'pending', 'La CLI réfléchit… (jusqu\'à 3 min)'));
+  result.replaceChildren(el('p', 'pending', compare
+    ? `${targets.length} CLI réfléchissent en parallèle… (jusqu'à 3 min)`
+    : 'La CLI réfléchit… (jusqu\'à 3 min)'));
   try {
-    const entry = await api('/api/ask', { method: 'POST', body: { prompt, cli: cliSelect.value } });
-    result.replaceChildren(renderAnswer(entry));
-    addToHistory([entry]);
+    if (compare) {
+      const entries = await api('/api/compare', { method: 'POST', body: { prompt, clis: targets } });
+      result.replaceChildren(renderCompare(entries));
+      addToHistory(entries);
+    } else {
+      const entry = await api('/api/ask', { method: 'POST', body: { prompt, cli: cliSelect.value } });
+      result.replaceChildren(renderAnswer(entry));
+      addToHistory([entry]);
+    }
   } catch (err) {
     result.replaceChildren(renderAnswer({ ok: false, cli: 'Hivemind', reponse: err.message, dureeMs: 0 }));
   } finally {

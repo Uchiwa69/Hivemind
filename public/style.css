@@ -180,3 +180,27 @@ button.primary, #send { background: var(--accent); color: var(--accent-text); bo
 .answer.error pre { color: var(--err); }
 .answer .prompt-echo { color: var(--muted); font-size: 13px; margin-bottom: 8px; white-space: pre-wrap; }
 .pending { color: var(--muted); margin-top: 16px; }
+
+.toggle { font-weight: 600; cursor: pointer; }
+.compare-clis { display: flex; gap: 14px; flex-wrap: wrap; }
+.compare-clis label { cursor: pointer; }
+.compare-clis label.disabled { color: var(--muted); cursor: not-allowed; }
+[hidden] { display: none !important; }
+
+.compare { margin-top: 16px; }
+.compare-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.compare-grid .answer { margin-top: 0; }
+
+.history-list .h-tag {
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+  margin-right: 5px;
+  color: var(--muted);
+}
