@@ -69,17 +69,44 @@ function addToHistory(entries) {
   renderHistory(entries.length === 1 ? entries[0].id : undefined);
 }
 
-// --- Choix de la CLI ---
+// --- Choix de la CLI et détection ---
 const cliSelect = $('#cli-select');
+const cliStatusList = $('#cli-status-list');
+const refreshButton = $('#refresh-clis');
+let clis = [];
 
-async function loadClis() {
-  const clis = await api('/api/clis');
+function renderClis() {
+  const previous = cliSelect.value;
   cliSelect.replaceChildren(...clis.map((cli) => {
-    const option = el('option', '', cli.name);
+    const option = el('option', '', cli.available ? cli.name : `${cli.name} (absente)`);
     option.value = cli.id;
+    option.disabled = !cli.available;
     return option;
   }));
+  const keep = clis.find((cli) => cli.id === previous && cli.available);
+  const first = clis.find((cli) => cli.available);
+  cliSelect.value = (keep || first || clis[0] || {}).id || '';
+
+  cliStatusList.replaceChildren(...clis.map((cli) => {
+    const li = el('li', cli.available ? 'on' : 'off', cli.name);
+    li.title = cli.available ? `Disponible : ${cli.version}` : `Absente : « ${cli.command} --version » ne répond pas`;
+    return li;
+  }));
 }
+
+async function loadClis(refresh = false) {
+  refreshButton.disabled = true;
+  refreshButton.textContent = 'Vérification…';
+  try {
+    clis = await api(refresh ? '/api/clis/refresh' : '/api/clis', refresh ? { method: 'POST' } : {});
+    renderClis();
+  } finally {
+    refreshButton.disabled = false;
+    refreshButton.textContent = 'Rafraîchir';
+  }
+}
+
+refreshButton.addEventListener('click', () => loadClis(true));
 
 // --- Envoi d'un prompt ---
 const form = $('#ask-form');

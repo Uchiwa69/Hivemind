@@ -1,6 +1,6 @@
 const path = require('path');
 const express = require('express');
-const { CLIS, listClis, ask } = require('./lib/clis');
+const { CLIS, listClis, detect, ask } = require('./lib/clis');
 const history = require('./lib/history');
 
 const HOST = '127.0.0.1';
@@ -10,8 +10,17 @@ const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.get('/api/clis', (req, res) => {
+// Détection lancée au démarrage ; la page attend sa fin au premier chargement.
+let detection = detect();
+
+app.get('/api/clis', async (req, res) => {
+  await detection;
   res.json(listClis());
+});
+
+app.post('/api/clis/refresh', async (req, res) => {
+  detection = detect();
+  res.json(await detection);
 });
 
 app.post('/api/ask', async (req, res) => {

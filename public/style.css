@@ -59,6 +59,20 @@ button.primary, #send { background: var(--accent); color: var(--accent-text); bo
 }
 .topbar h1 { font-size: 18px; margin: 0; }
 
+.cli-status { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+.cli-status ul { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
+.cli-status li {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  cursor: default;
+}
+.cli-status li::before { content: "●"; margin-right: 5px; }
+.cli-status li.on::before { color: var(--ok); }
+.cli-status li.off { color: var(--muted); }
+.cli-status li.off::before { color: var(--muted); content: "○"; }
+
 .layout { display: flex; min-height: calc(100vh - 50px); }
 .main { flex: 1; padding: 20px; min-width: 0; }
 
