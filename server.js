@@ -38,6 +38,19 @@ app.post('/api/clis/refresh', async (req, res) => {
   res.json(await detection);
 });
 
+// HM-15 : l'échange d'origine d'un relais, s'il existe encore dans l'historique.
+function relayOf(body) {
+  const source = body?.relayFrom ? history.find(String(body.relayFrom)) : null;
+  if (!source) return null;
+  const relayFromCli = source.cliUtilisee || source.cli;
+  return {
+    relayFrom: source.id,
+    relayKind: body.relayKind === 'relecture' ? 'relecture' : 'envoi',
+    relayFromCli,
+    sourceId: source.cliId || Object.keys(CLIS).find((id) => CLIS[id].name === relayFromCli),
+  };
+}
+
 app.post('/api/ask', async (req, res) => {
   const prompt = String(req.body?.prompt || '').trim();
   const cli = String(req.body?.cli || '');
@@ -51,8 +64,12 @@ app.post('/api/ask', async (req, res) => {
   }
   await detection;
   const { fallback, fallbackOrder, simulateClaudeDown } = settings.get();
-  const answer = await askWithFallback(cli, prompt, { cwd, simulateClaudeDown, order: fallback ? fallbackOrder : [] });
-  res.json(history.add({ ...answer, prompt }));
+  const relay = relayOf(req.body);
+  // Une relecture ne doit pas basculer vers l'IA qui a écrit la réponse relue.
+  const exclude = relay?.relayKind === 'relecture' && relay.sourceId ? [relay.sourceId] : [];
+  const answer = await askWithFallback(cli, prompt, { cwd, simulateClaudeDown, exclude, order: fallback ? fallbackOrder : [] });
+  const link = relay ? { relayFrom: relay.relayFrom, relayKind: relay.relayKind, relayFromCli: relay.relayFromCli } : {};
+  res.json(history.add({ ...answer, ...link, prompt }));
 });
 
 app.post('/api/compare', async (req, res) => {

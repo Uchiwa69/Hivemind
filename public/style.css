@@ -261,3 +261,47 @@ button.primary, #send { background: var(--accent); color: var(--accent-text); bo
 }
 .answer .fail-list { margin: 8px 0 0; padding-left: 20px; font-size: 14px; }
 .answer .fail-list li { margin-bottom: 4px; }
+
+.answer-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.answer-actions > button, .menu > summary { font-size: 13px; padding: 3px 10px; }
+.menu { position: relative; }
+.menu > summary {
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+}
+.menu > summary::-webkit-details-marker { display: none; }
+.menu-list {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 4px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 170px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
+}
+.menu-list button { border: 0; text-align: left; font-size: 13px; }
+.menu-list button:hover { background: var(--bg); }
+.menu-list .menu-empty { color: var(--muted); font-size: 13px; padding: 4px 8px; }
+
+.relay-note, .relay-children { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+.relay-children { margin: 8px 0 0; }
+button.link { border: 0; padding: 0; background: none; color: var(--accent); text-decoration: underline; font-size: inherit; }
+.relay-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  padding: 4px 10px;
+  border-left: 3px solid var(--accent);
+  background: var(--code-bg);
+  font-size: 13px;
+}
+.relay-bar button { margin-left: auto; font-size: 12px; padding: 2px 8px; }

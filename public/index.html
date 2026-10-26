@@ -48,6 +48,10 @@
 
       <section id="tab-chat" class="tab">
         <form id="ask-form" class="ask-form">
+          <div id="relay-bar" class="relay-bar" hidden>
+            <span id="relay-text"></span>
+            <button type="button" id="relay-cancel">Annuler le lien</button>
+          </div>
           <textarea id="prompt" rows="4" placeholder="Votre prompt… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)" required></textarea>
           <div class="ask-actions">
             <label class="toggle"><input type="checkbox" id="compare-toggle"> Comparer</label>

@@ -38,11 +38,57 @@ function fallbackNote(entry) {
   return el('p', 'fallback-note', `${failed} → réponse ${de(entry.cliUtilisee || entry.cli)}`);
 }
 
+// --- Relais entre IA (HM-15) ---
+const REVIEW_PROMPT = 'Relis cette réponse d\'une autre IA. Liste les erreurs, les oublis et les améliorations, puis donne une version corrigée si nécessaire :';
+
+function relayLabel(entry) {
+  return `${entry.relayKind === 'relecture' ? 'Relecture' : 'Relais'} de la réponse ${de(entry.relayFromCli)}`;
+}
+
+function linkButton(text, onClick) {
+  const button = el('button', 'link', text);
+  button.type = 'button';
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+// Menu déroulant « Envoyer à… » / « Faire relire par… » listant les autres CLI disponibles.
+function relayMenu(label, entry, kind) {
+  const menu = el('details', 'menu');
+  menu.append(el('summary', '', label));
+  const list = el('div', 'menu-list');
+  const targets = clis.filter((cli) => cli.available && cli.name !== entry.cli);
+  list.append(...targets.map((cli) => {
+    const button = el('button', '', cli.name);
+    button.type = 'button';
+    button.addEventListener('click', () => {
+      menu.open = false;
+      startRelay(entry, kind, cli.id);
+    });
+    return button;
+  }));
+  if (!targets.length) list.append(el('span', 'menu-empty', 'Aucune autre CLI disponible'));
+  menu.append(list);
+  return menu;
+}
+
+function answerActions(entry) {
+  const bar = el('div', 'answer-actions');
+  bar.append(relayMenu('Envoyer à…', entry, 'envoi'), relayMenu('Faire relire par…', entry, 'relecture'));
+  return bar;
+}
+
 function renderAnswer(entry, { showPrompt = true } = {}) {
   const box = el('div', entry.ok === false ? 'answer error' : 'answer');
   const head = el('div', 'answer-head');
   head.append(el('strong', '', entry.cli), el('span', '', formatDuree(entry.dureeMs)));
   box.append(head);
+  if (entry.relayFrom) {
+    const note = el('p', 'relay-note', `${relayLabel(entry)} · `);
+    const source = historyEntries.find((e) => e.id === entry.relayFrom);
+    note.append(source ? linkButton('voir l\'original', () => openEntry(source)) : '(original supprimé)');
+    box.append(note);
+  }
   if (showPrompt && entry.prompt) box.append(el('div', 'prompt-echo', `› ${entry.prompt}`));
   if (entry.ok && entry.bascule?.length) box.append(fallbackNote(entry));
   if (entry.erreur) {
@@ -60,6 +106,16 @@ function renderAnswer(entry, { showPrompt = true } = {}) {
   } else {
     box.append(el('pre', '', entry.reponse));
   }
+  const children = historyEntries.filter((e) => e.relayFrom && e.relayFrom === entry.id).reverse();
+  if (children.length) {
+    const line = el('p', 'relay-children', 'Relayée vers : ');
+    children.forEach((child, i) => {
+      if (i) line.append(', ');
+      line.append(linkButton(`${child.cli} (${child.relayKind === 'relecture' ? 'relecture' : 'relais'})`, () => openEntry(child)));
+    });
+    box.append(line);
+  }
+  if (entry.ok && entry.id) box.append(answerActions(entry));
   return box;
 }
 
@@ -71,6 +127,11 @@ function renderCompare(entries) {
   grid.append(...entries.map((entry) => renderAnswer(entry, { showPrompt: false })));
   wrap.append(grid);
   return wrap;
+}
+
+function openEntry(entry) {
+  showEntry(entry);
+  renderHistory(entry);
 }
 
 function showEntry(entry) {
@@ -104,17 +165,18 @@ function renderHistory(active) {
     const meta = el('div', 'h-meta');
     const cliLabel = el('span', entry.ok === false ? 'bad' : '', entry.cli);
     if (entry.compareId) cliLabel.prepend(el('span', 'h-tag', 'comparer'));
+    if (entry.relayFrom) {
+      cliLabel.prepend(el('span', 'h-tag', entry.relayKind === 'relecture' ? 'relecture' : 'relais'));
+      li.title = `${relayLabel(entry)}\n\n${entry.prompt}`;
+    }
     if (entry.ok && entry.bascule?.length) {
       cliLabel.prepend(el('span', 'h-tag', 'bascule'));
       cliLabel.title = `Demandé à ${entry.cliDemandee}, répondu par ${entry.cliUtilisee}`;
     }
     meta.append(cliLabel, el('span', '', formatDate(entry.date)));
     li.append(meta, el('div', 'h-prompt', entry.prompt));
-    li.title = entry.prompt;
-    li.addEventListener('click', () => {
-      showEntry(entry);
-      renderHistory(entry);
-    });
+    li.title ||= entry.prompt;
+    li.addEventListener('click', () => openEntry(entry));
     return li;
   }));
 }
@@ -141,6 +203,7 @@ function selectedCompareClis() {
 
 compareToggle.addEventListener('change', () => {
   const on = compareToggle.checked;
+  if (on) clearRelay();
   $('#single-cli').hidden = on;
   compareBox.hidden = !on;
 });
@@ -207,6 +270,41 @@ promptInput.addEventListener('keydown', (e) => {
   }
 });
 
+// Relais en cours de rédaction : le prochain envoi sera lié à cet échange.
+const relayBar = $('#relay-bar');
+let relay = null;
+
+function clearRelay() {
+  relay = null;
+  relayBar.hidden = true;
+}
+
+function startRelay(entry, kind, targetId) {
+  if (compareToggle.checked) {
+    compareToggle.checked = false;
+    compareToggle.dispatchEvent(new Event('change'));
+  }
+  cliSelect.value = targetId;
+  relay = { relayFrom: entry.id, relayKind: kind };
+  const source = entry.cliUtilisee || entry.cli;
+  $('#relay-text').textContent = `${relayLabel({ relayKind: kind, relayFromCli: source })} : modifiez le texte si besoin, puis envoyez.`;
+  relayBar.hidden = false;
+  if (kind === 'relecture') {
+    promptInput.value = `${REVIEW_PROMPT}\n\n${entry.reponse}`;
+    promptInput.focus();
+    promptInput.setSelectionRange(promptInput.value.length, promptInput.value.length);
+  } else {
+    // Le curseur reste en tête pour taper la consigne avant la réponse relayée.
+    promptInput.value = `\n\n---\nRéponse ${de(source)} :\n${entry.reponse}`;
+    promptInput.focus();
+    promptInput.setSelectionRange(0, 0);
+  }
+  promptInput.scrollTop = 0;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+$('#relay-cancel').addEventListener('click', clearRelay);
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const prompt = promptInput.value.trim();
@@ -228,9 +326,10 @@ form.addEventListener('submit', async (e) => {
       result.replaceChildren(renderCompare(entries));
       addToHistory(entries);
     } else {
-      const entry = await api('/api/ask', { method: 'POST', body: { prompt, cli: cliSelect.value } });
-      result.replaceChildren(renderAnswer(entry));
+      const entry = await api('/api/ask', { method: 'POST', body: { prompt, cli: cliSelect.value, ...relay } });
+      clearRelay();
       addToHistory([entry]);
+      result.replaceChildren(renderAnswer(entry));
     }
   } catch (err) {
     result.replaceChildren(renderAnswer({ ok: false, cli: 'Hivemind', reponse: err.message, dureeMs: 0 }));
