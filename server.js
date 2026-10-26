@@ -27,6 +27,15 @@ app.get('/api/history', (req, res) => {
   res.json(history.list());
 });
 
-app.listen(PORT, HOST, () => {
-  console.log(`Hivemind : http://${HOST}:${PORT}`);
+// Express 5 appelle ce callback aussi en cas d'erreur d'écoute.
+app.listen(PORT, HOST, (err) => {
+  if (err) {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Le port ${PORT} est déjà utilisé : Hivemind tourne peut-être déjà dans un autre terminal (http://${HOST}:${PORT}).`);
+    } else {
+      console.error(`Impossible de démarrer Hivemind : ${err.message}`);
+    }
+    process.exit(1);
+  }
+  console.log(`Hivemind démarré : ouvrez http://${HOST}:${PORT} dans votre navigateur (Ctrl+C pour arrêter).`);
 });

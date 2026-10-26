@@ -20,12 +20,12 @@
 
 | Rubrique | À remplir |
 |---|---|
-| Prérequis (Node.js / Python, version) | Node.js LTS |
-| CLI pilotées (au moins 2 connectées sur le poste de démo) | Claude Code, Antigravity CLI (agy), Gemini CLI · Codex : non installé |
-| Installation (commande) | `npm install` |
+| Prérequis (Node.js / Python, version) | Node.js LTS (20 ou plus, testé avec 24) · Windows + PowerShell · au moins une CLI d'IA installée **et connectée** (dans le `PATH`) |
+| CLI pilotées (au moins 2 connectées sur le poste de démo) | Claude Code : `claude -p "<prompt>"` (lit `CLAUDE.md`) · Codex CLI : `codex exec --skip-git-repo-check "<prompt>"` (lit `AGENTS.md`) · Antigravity CLI : `agy -p "<prompt>"` (lit `GEMINI.md`) · Gemini CLI : `gemini -p "<prompt>"` (lit `GEMINI.md`). Sur le poste de démo : Claude Code, Antigravity / Gemini ; Codex non installé (affiché « absente », sans planter) |
+| Installation (commande) | `npm install` (dans le dossier du projet) |
 | Lancement (une seule commande) | `npm start` |
-| Adresse dans le navigateur | `http://127.0.0.1:3000` |
-| À savoir | Lancez Hivemind dans **votre propre terminal**, pas via un agent Claude Code (sinon `claude -p` refuse de démarrer : sessions imbriquées). |
+| Adresse dans le navigateur | `http://127.0.0.1:3000` (le serveur n'écoute que sur la machine locale) |
+| À savoir | Lancez Hivemind dans **votre propre terminal**, pas via un agent Claude Code (sinon `claude -p` refuse de démarrer : sessions imbriquées). Connectez chaque CLI une fois dans un terminal avant (ex. lancer `claude`). Les données (historique, mémoire, réglages) restent en local dans `data/`, ignoré par Git. Si le port 3000 est pris, Hivemind tourne sûrement déjà ailleurs. |
 
 ---
 
