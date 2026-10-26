@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hivemind</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Hivemind</h1>
+  </header>
+
+  <div class="layout">
+    <main class="main">
+      <section id="tab-chat" class="tab">
+        <form id="ask-form" class="ask-form">
+          <textarea id="prompt" rows="4" placeholder="Votre prompt… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)" required></textarea>
+          <div class="ask-actions">
+            <button type="submit" id="send">Envoyer</button>
+          </div>
+        </form>
+
+        <div id="result"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
