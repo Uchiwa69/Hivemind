@@ -167,16 +167,65 @@ memoryEditor.addEventListener('input', () => {
   setStatus(memoryStatus, memoryEditor.value === savedMemory ? '' : 'Modifications non enregistrées');
 });
 
+async function saveMemory() {
+  const { content } = await api('/api/memory', { method: 'PUT', body: { content: memoryEditor.value } });
+  savedMemory = content;
+  setStatus(memoryStatus, `Enregistré à ${new Date().toLocaleTimeString('fr-FR')}`, 'ok');
+}
+
 memorySave.addEventListener('click', async () => {
   memorySave.disabled = true;
   try {
-    const { content } = await api('/api/memory', { method: 'PUT', body: { content: memoryEditor.value } });
-    savedMemory = content;
-    setStatus(memoryStatus, `Enregistré à ${new Date().toLocaleTimeString('fr-FR')}`, 'ok');
+    await saveMemory();
   } catch (err) {
     setStatus(memoryStatus, err.message, 'err');
   } finally {
     memorySave.disabled = false;
+  }
+});
+
+// --- Synchronisation vers CLAUDE.md, AGENTS.md, GEMINI.md ---
+const memorySync = $('#memory-sync');
+const syncResults = $('#sync-results');
+
+const SYNC_LABELS = {
+  created: ['ok', 'fichier créé avec le bloc Hivemind'],
+  updated: ['ok', 'bloc Hivemind mis à jour (le reste du fichier est intact)'],
+  unchanged: ['ok', 'déjà à jour'],
+  appended: ['ok', 'bloc Hivemind ajouté à la fin (le contenu existant est intact)'],
+  'needs-confirm': ['skip', 'non modifié (ajout refusé)'],
+  error: ['err', 'erreur'],
+};
+
+function renderSync(dir, results) {
+  syncResults.replaceChildren(...results.map((r) => {
+    const [kind, label] = SYNC_LABELS[r.status] || ['err', r.status];
+    const li = el('li', kind);
+    li.append(el('code', '', r.file), ` : ${label}${r.message ? ` : ${r.message}` : ''}`);
+    return li;
+  }), el('li', 'skip', `Dossier : ${dir}`));
+}
+
+memorySync.addEventListener('click', async () => {
+  memorySync.disabled = true;
+  syncResults.replaceChildren();
+  try {
+    if (memoryEditor.value !== savedMemory) await saveMemory();
+    let { dir, results } = await api('/api/sync', { method: 'POST', body: {} });
+    const pending = results.filter((r) => r.status === 'needs-confirm').map((r) => r.file);
+    if (pending.length) {
+      const ok = window.confirm(
+        `${pending.join(', ')} existe déjà dans ${dir} sans bloc Hivemind.\n\n`
+        + 'Ajouter la mémoire à la fin du fichier ? Le contenu existant ne sera pas modifié.',
+      );
+      if (ok) ({ dir, results } = await api('/api/sync', { method: 'POST', body: { confirm: pending } }));
+    }
+    renderSync(dir, results);
+    setStatus(memoryStatus, `Synchronisé à ${new Date().toLocaleTimeString('fr-FR')}`, 'ok');
+  } catch (err) {
+    setStatus(memoryStatus, err.message, 'err');
+  } finally {
+    memorySync.disabled = false;
   }
 });
 

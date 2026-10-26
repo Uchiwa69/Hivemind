@@ -4,6 +4,7 @@ const express = require('express');
 const { CLIS, listClis, detect, ask } = require('./lib/clis');
 const history = require('./lib/history');
 const settings = require('./lib/settings');
+const sync = require('./lib/sync');
 const { readText, writeText } = require('./lib/store');
 
 const MEMORY_FILE = 'memory.md';
@@ -64,6 +65,18 @@ app.put('/api/memory', (req, res) => {
   if (typeof content !== 'string') return res.status(400).json({ error: 'Contenu de mémoire invalide.' });
   writeText(MEMORY_FILE, content);
   res.json({ content });
+});
+
+app.post('/api/sync', (req, res) => {
+  const dir = settings.workdir();
+  if (!dir) return res.status(400).json({ error: 'Choisissez d\'abord un dossier de travail (en haut de la page).' });
+  const memory = readText(MEMORY_FILE);
+  if (!memory.trim()) return res.status(400).json({ error: 'La mémoire est vide : écrivez-la et enregistrez-la avant de synchroniser.' });
+  if (memory.includes(sync.START) || memory.includes(sync.END)) {
+    return res.status(400).json({ error: 'La mémoire ne doit pas contenir les balises HIVEMIND elles-mêmes.' });
+  }
+  const confirm = Array.isArray(req.body?.confirm) ? req.body.confirm.map(String) : [];
+  res.json({ dir, results: sync.syncAll(dir, memory, confirm) });
 });
 
 app.get('/api/settings', (req, res) => {

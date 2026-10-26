@@ -93,6 +93,13 @@ button.primary, #send { background: var(--accent); color: var(--accent-text); bo
   resize: vertical;
 }
 
+.sync-results { list-style: none; padding: 0; margin: 12px 0 0; font-size: 14px; }
+.sync-results li { padding: 3px 0; }
+.sync-results code { font-weight: 600; }
+.sync-results .ok { color: var(--ok); }
+.sync-results .err { color: var(--err); }
+.sync-results .skip { color: var(--muted); }
+
 .cli-status { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; }
 .cli-status ul { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
 .cli-status li {
