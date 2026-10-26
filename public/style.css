@@ -178,6 +178,11 @@ button.primary, #send { background: var(--accent); color: var(--accent-text); bo
 .answer pre { margin: 0; white-space: pre-wrap; word-wrap: break-word; font: 14px/1.5 ui-monospace, Consolas, monospace; }
 .answer.error { border-color: var(--err); background: var(--err-bg); }
 .answer.error pre { color: var(--err); }
+.answer .err-message { margin: 0 0 4px; font-weight: 600; color: var(--err); }
+.answer .err-action { margin: 0; }
+.answer .err-detail { margin-top: 8px; font-size: 13px; }
+.answer .err-detail summary { cursor: pointer; color: var(--muted); }
+.answer.error .err-detail pre { color: var(--muted); font-size: 12px; margin-top: 6px; }
 .answer .prompt-echo { color: var(--muted); font-size: 13px; margin-bottom: 8px; white-space: pre-wrap; }
 .pending { color: var(--muted); margin-top: 16px; }
 

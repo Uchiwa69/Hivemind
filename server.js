@@ -109,6 +109,22 @@ app.put('/api/settings', (req, res) => {
   }
 });
 
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'Action inconnue.' });
+});
+
+// Filet de sécurité : toute erreur inattendue devient une réponse JSON, le serveur continue.
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Requête illisible (JSON invalide).' });
+  if (err.type === 'entity.too.large') return res.status(413).json({ error: 'Texte trop long (1 Mo maximum).' });
+  console.error(err);
+  res.status(500).json({ error: `Erreur interne de Hivemind : ${err.message}. Vous pouvez réessayer.` });
+});
+
+process.on('uncaughtException', (err) => console.error('Erreur inattendue (Hivemind continue) :', err));
+process.on('unhandledRejection', (err) => console.error('Erreur inattendue (Hivemind continue) :', err));
+
 // Express 5 appelle ce callback aussi en cas d'erreur d'écoute.
 app.listen(PORT, HOST, (err) => {
   if (err) {

@@ -1,11 +1,16 @@
 const $ = (sel) => document.querySelector(sel);
 
 async function api(url, options = {}) {
-  const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+  } catch {
+    throw new Error('Le serveur Hivemind ne répond pas : vérifiez que « npm start » tourne toujours dans votre terminal.');
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Erreur serveur (${res.status})`);
   return data;
@@ -28,7 +33,16 @@ function renderAnswer(entry, { showPrompt = true } = {}) {
   head.append(el('strong', '', entry.cli), el('span', '', formatDuree(entry.dureeMs)));
   box.append(head);
   if (showPrompt && entry.prompt) box.append(el('div', 'prompt-echo', `› ${entry.prompt}`));
-  box.append(el('pre', '', entry.reponse));
+  if (entry.erreur) {
+    box.append(el('p', 'err-message', entry.erreur.message), el('p', 'err-action', `→ ${entry.erreur.action}`));
+    if (entry.erreur.detail) {
+      const details = el('details', 'err-detail');
+      details.append(el('summary', '', 'Détail technique'), el('pre', '', entry.erreur.detail));
+      box.append(details);
+    }
+  } else {
+    box.append(el('pre', '', entry.reponse));
+  }
   return box;
 }
 
