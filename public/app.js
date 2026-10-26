@@ -72,9 +72,16 @@ function relayMenu(label, entry, kind) {
   return menu;
 }
 
-function answerActions(entry) {
+function answerActions(entry, box) {
   const bar = el('div', 'answer-actions');
-  bar.append(relayMenu('Envoyer à…', entry, 'envoi'), relayMenu('Faire relire par…', entry, 'relecture'));
+  const remember = el('button', '', 'Retenir');
+  remember.type = 'button';
+  remember.title = 'Ajouter cette décision (ou le texte sélectionné) à la mémoire commune';
+  // La sélection est lue avant que le clic ne puisse l'effacer.
+  let selected = '';
+  remember.addEventListener('mousedown', () => { selected = selectionIn(box); });
+  remember.addEventListener('click', () => openRemember(entry, selected));
+  bar.append(remember, relayMenu('Envoyer à…', entry, 'envoi'), relayMenu('Faire relire par…', entry, 'relecture'));
   return bar;
 }
 
@@ -115,7 +122,7 @@ function renderAnswer(entry, { showPrompt = true } = {}) {
     });
     box.append(line);
   }
-  if (entry.ok && entry.id) box.append(answerActions(entry));
+  if (entry.ok && entry.id) box.append(answerActions(entry, box));
   return box;
 }
 
@@ -406,26 +413,117 @@ function renderSync(dir, results) {
   }), el('li', 'skip', `Dossier : ${dir}`));
 }
 
+// Un fichier existant sans bloc Hivemind n'est complété qu'après confirmation (HM-07).
+async function confirmPending({ dir, results }) {
+  const pending = results.filter((r) => r.status === 'needs-confirm').map((r) => r.file);
+  if (!pending.length) return { dir, results };
+  const ok = window.confirm(
+    `${pending.join(', ')} existe déjà dans ${dir} sans bloc Hivemind.\n\n`
+    + 'Ajouter la mémoire à la fin du fichier ? Le contenu existant ne sera pas modifié.',
+  );
+  return ok ? api('/api/sync', { method: 'POST', body: { confirm: pending } }) : { dir, results };
+}
+
 memorySync.addEventListener('click', async () => {
   memorySync.disabled = true;
   syncResults.replaceChildren();
   try {
     if (memoryEditor.value !== savedMemory) await saveMemory();
-    let { dir, results } = await api('/api/sync', { method: 'POST', body: {} });
-    const pending = results.filter((r) => r.status === 'needs-confirm').map((r) => r.file);
-    if (pending.length) {
-      const ok = window.confirm(
-        `${pending.join(', ')} existe déjà dans ${dir} sans bloc Hivemind.\n\n`
-        + 'Ajouter la mémoire à la fin du fichier ? Le contenu existant ne sera pas modifié.',
-      );
-      if (ok) ({ dir, results } = await api('/api/sync', { method: 'POST', body: { confirm: pending } }));
-    }
+    const { dir, results } = await confirmPending(await api('/api/sync', { method: 'POST', body: {} }));
     renderSync(dir, results);
     setStatus(memoryStatus, `Synchronisé à ${new Date().toLocaleTimeString('fr-FR')}`, 'ok');
   } catch (err) {
     setStatus(memoryStatus, err.message, 'err');
   } finally {
     memorySync.disabled = false;
+  }
+});
+
+// --- Retenir une décision (HM-24) ---
+const rememberDialog = $('#remember-dialog');
+const rememberForm = $('#remember-form');
+const rememberText = $('#remember-text');
+const rememberStatus = $('#remember-status');
+const rememberSummarize = $('#remember-summarize');
+const rememberSave = $('#remember-save');
+const toast = $('#toast');
+let rememberEntry = null;
+let toastTimer = null;
+
+function showToast(text, kind = '') {
+  toast.textContent = text;
+  toast.className = `toast ${kind}`;
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.hidden = true; }, 6000);
+}
+
+// Texte sélectionné à l'intérieur de la réponse affichée, sinon chaîne vide.
+function selectionIn(box) {
+  const selection = window.getSelection();
+  const pre = box.querySelector('pre');
+  if (!selection || selection.isCollapsed || !pre) return '';
+  const range = selection.getRangeAt(0);
+  return pre.contains(range.commonAncestorContainer) ? selection.toString().trim() : '';
+}
+
+// Identifiant de la CLI qui a écrit la réponse (les anciens échanges n'ont que son nom).
+function entryCliId(entry) {
+  return entry.cliId || clis.find((cli) => cli.name === (entry.cliUtilisee || entry.cli))?.id;
+}
+
+function openRemember(entry, selected) {
+  rememberEntry = entry;
+  rememberText.value = selected || entry.reponse;
+  $('#remember-source').textContent = `Source : ${entry.cliUtilisee || entry.cli}. Le texte sera ajouté à la section « Décisions » de la mémoire puis partagé avec les 3 IA.`;
+  setStatus(rememberStatus, '');
+  rememberSummarize.disabled = !entryCliId(entry);
+  rememberDialog.showModal();
+  rememberText.focus();
+}
+
+$('#remember-cancel').addEventListener('click', () => rememberDialog.close());
+
+rememberSummarize.addEventListener('click', async () => {
+  rememberSummarize.disabled = true;
+  rememberSave.disabled = true;
+  setStatus(rememberStatus, `${rememberEntry.cliUtilisee || rememberEntry.cli} résume…`);
+  try {
+    const { resume } = await api('/api/memory/summarize', { method: 'POST', body: { text: rememberText.value, question: rememberEntry.prompt, cli: entryCliId(rememberEntry) } });
+    rememberText.value = resume;
+    setStatus(rememberStatus, 'Résumé prêt : modifiez-le si besoin.', 'ok');
+  } catch (err) {
+    setStatus(rememberStatus, err.message, 'err');
+  } finally {
+    rememberSummarize.disabled = false;
+    rememberSave.disabled = false;
+  }
+});
+
+rememberForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  rememberSave.disabled = true;
+  try {
+    // Comme « Synchroniser » : les modifications en cours de l'onglet Mémoire sont d'abord enregistrées.
+    if (memoryEditor.value !== savedMemory) await saveMemory();
+    const saved = await api('/api/memory/decisions', { method: 'POST', body: { text: rememberText.value, entryId: rememberEntry.id } });
+    savedMemory = saved.content;
+    memoryEditor.value = saved.content;
+    rememberDialog.close();
+    if (saved.syncError) {
+      showToast(`Décision retenue dans la mémoire, mais pas partagée : ${saved.syncError}`, 'err');
+      return;
+    }
+    const { dir, results } = await confirmPending(saved);
+    renderSync(dir, results);
+    const failed = results.filter((r) => !['created', 'updated', 'unchanged', 'appended'].includes(r.status));
+    if (failed.length) showToast(`Décision retenue, mais non partagée dans ${failed.map((r) => r.file).join(', ')} (voir l'onglet Mémoire).`, 'err');
+    else showToast('Décision retenue et partagée avec les 3 IA');
+  } catch (err) {
+    if (rememberDialog.open) setStatus(rememberStatus, err.message, 'err');
+    else showToast(err.message, 'err');
+  } finally {
+    rememberSave.disabled = false;
   }
 });
 

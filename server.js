@@ -6,6 +6,7 @@ const { CLIS, listClis, detect, ask, askWithFallback } = require('./lib/clis');
 const history = require('./lib/history');
 const settings = require('./lib/settings');
 const sync = require('./lib/sync');
+const { addDecision } = require('./lib/decisions');
 const { readText, writeText } = require('./lib/store');
 
 const MEMORY_FILE = 'memory.md';
@@ -105,16 +106,68 @@ app.put('/api/memory', (req, res) => {
   res.json({ content });
 });
 
-app.post('/api/sync', (req, res) => {
+// Synchronisation HM-07 (aussi utilisée par HM-24) ; lève une erreur au message lisible si elle est impossible.
+function syncMemory(confirm = []) {
   const dir = settings.workdir();
-  if (!dir) return res.status(400).json({ error: 'Choisissez d\'abord un dossier de travail (en haut de la page).' });
+  if (!dir) throw new Error('Choisissez d\'abord un dossier de travail (en haut de la page).');
   const memory = readText(MEMORY_FILE);
-  if (!memory.trim()) return res.status(400).json({ error: 'La mémoire est vide : écrivez-la et enregistrez-la avant de synchroniser.' });
+  if (!memory.trim()) throw new Error('La mémoire est vide : écrivez-la et enregistrez-la avant de synchroniser.');
   if (memory.includes(sync.START) || memory.includes(sync.END)) {
-    return res.status(400).json({ error: 'La mémoire ne doit pas contenir les balises HIVEMIND elles-mêmes.' });
+    throw new Error('La mémoire ne doit pas contenir les balises HIVEMIND elles-mêmes.');
   }
+  return { dir, results: sync.syncAll(dir, memory, confirm) };
+}
+
+app.post('/api/sync', (req, res) => {
   const confirm = Array.isArray(req.body?.confirm) ? req.body.confirm.map(String) : [];
-  res.json({ dir, results: sync.syncAll(dir, memory, confirm) });
+  try {
+    res.json(syncMemory(confirm));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// HM-24 : résumé d'une réponse en une phrase, par la CLI qui l'a écrite (sans bascule ni historique).
+app.post('/api/memory/summarize', async (req, res) => {
+  const text = String(req.body?.text || '').trim();
+  const cli = String(req.body?.cli || '');
+  if (!text) return res.status(400).json({ error: 'Rien à résumer : le texte est vide.' });
+  if (!Object.hasOwn(CLIS, cli)) return res.status(400).json({ error: 'CLI inconnue.' });
+  let cwd;
+  try {
+    cwd = cliCwd();
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  // La question d'origine donne le contexte d'une réponse courte (ex. un seul mot).
+  const question = String(req.body?.question || '').trim();
+  const prompt = question
+    ? `Résume cette décision en une seule phrase factuelle :\n\nQuestion posée : ${question}\n\nRéponse retenue : ${text}`
+    : `Résume cette décision en une seule phrase factuelle :\n\n${text}`;
+  const { simulateClaudeDown } = settings.get();
+  const answer = await ask(cli, prompt, { cwd, simulateClaudeDown });
+  if (!answer.ok) return res.status(502).json({ error: `Résumé impossible : ${answer.erreur.message} ${answer.erreur.action}` });
+  res.json({ resume: answer.reponse });
+});
+
+// HM-24 : ajoute la décision à la mémoire puis la partage aux 3 CLI, avec les protections de HM-07.
+app.post('/api/memory/decisions', (req, res) => {
+  const text = String(req.body?.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'La décision est vide.' });
+  if (text.includes(sync.START) || text.includes(sync.END)) {
+    return res.status(400).json({ error: 'La décision ne doit pas contenir les balises HIVEMIND.' });
+  }
+  const entry = history.find(String(req.body?.entryId || ''));
+  if (!entry) return res.status(400).json({ error: 'Échange introuvable dans l\'historique.' });
+  const content = addDecision(readText(MEMORY_FILE), { date: new Date(), source: entry.cliUtilisee || entry.cli, text });
+  writeText(MEMORY_FILE, content);
+  let shared;
+  try {
+    shared = syncMemory();
+  } catch (err) {
+    shared = { syncError: err.message };
+  }
+  res.json({ content, ...shared });
 });
 
 app.get('/api/settings', (req, res) => {

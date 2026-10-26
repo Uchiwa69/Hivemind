@@ -80,6 +80,23 @@
     </main>
   </div>
 
+  <dialog id="remember-dialog" class="remember-dialog">
+    <form id="remember-form">
+      <h2>Retenir une décision</h2>
+      <p id="remember-source" class="hint"></p>
+      <textarea id="remember-text" rows="7" required></textarea>
+      <div class="ask-actions">
+        <button type="button" id="remember-summarize">Résumer en une ligne</button>
+        <span id="remember-status" class="status"></span>
+        <span class="spacer"></span>
+        <button type="button" id="remember-cancel">Annuler</button>
+        <button type="submit" id="remember-save" class="primary">Retenir</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
   <script src="app.js"></script>
 </body>
 </html>
