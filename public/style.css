@@ -513,6 +513,8 @@ svg { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColo
 @keyframes flash { 0% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: var(--shadow-sm); } }
 
 /* En cours */
+.pending-live { overflow-wrap: anywhere; }
+.pending-live .pulse { margin-top: 6px; }
 .pending-body { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13.5px; }
 .pulse { display: inline-flex; gap: 4px; }
 .pulse i { width: 6px; height: 6px; border-radius: 50%; background: var(--cli-color, var(--accent)); animation: pulse 1.2s infinite ease-in-out; }

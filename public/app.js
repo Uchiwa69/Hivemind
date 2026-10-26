@@ -16,6 +16,40 @@ async function api(url, options = {}) {
   return data;
 }
 
+// HM-09 : lit une réponse NDJSON ligne par ligne ; onEvent reçoit attempt et delta, la promesse rend l'échange final.
+async function apiStream(url, body, onEvent) {
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...body, stream: true }),
+    });
+  } catch {
+    throw new Error('Le serveur Hivemind ne répond pas : vérifiez que Hivemind tourne toujours.');
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Erreur serveur (${res.status})`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const event = JSON.parse(line);
+      if (event.type === 'done') return event.entry;
+      onEvent(event);
+    }
+    if (done) throw new Error('La connexion avec le serveur a été coupée avant la fin de la réponse. L\'échange est peut-être dans l\'historique : rechargez la page.');
+  }
+}
+
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -543,19 +577,59 @@ function renderAnswer(entry, { state } = {}) {
   return box;
 }
 
-function renderPendingAnswer(cliId, start, { state, text } = {}) {
-  const box = paint(el('div', 'msg-ai'), cliId);
+function pulse() {
+  const node = el('span', 'pulse');
+  node.setAttribute('aria-hidden', 'true');
+  node.append(el('i'), el('i'), el('i'));
+  return node;
+}
+
+// Corps d'une carte « en cours » : « réfléchit… » puis le texte reçu au fil de l'eau (HM-09).
+function fillPending(target) {
+  const body = target.view;
+  if (!target.text) {
+    body.className = 'pending-body';
+    body.replaceChildren(pulse(), target.hint || `${cliName(target.cliId)} réfléchit…`);
+  } else {
+    body.className = 'pending-live';
+    body.replaceChildren(renderRich(target.text), pulse());
+  }
+}
+
+// target = { cliId, start, text, bascule, hint } : un envoi simple ou une colonne de Comparer.
+function renderPendingAnswer(target, { state } = {}) {
+  const box = paint(el('div', 'msg-ai'), target.cliId);
   box.setAttribute('aria-busy', 'true');
   const meta = el('span', 'meta elapsed', '0 s');
-  meta.dataset.start = String(start);
-  box.append(renderHead(cliName(cliId), cliId, meta, state));
-  const body = el('div', 'pending-body');
-  const pulse = el('span', 'pulse');
-  pulse.setAttribute('aria-hidden', 'true');
-  pulse.append(el('i'), el('i'), el('i'));
-  body.append(pulse, text || `${cliName(cliId)} réfléchit…`);
-  box.append(body);
+  meta.dataset.start = String(target.start);
+  box.append(renderHead(cliName(target.cliId), target.cliId, meta, state));
+  if (target.bascule?.length) box.append(renderFallback({ bascule: target.bascule, cli: cliName(target.cliId) }));
+  target.view = el('div');
+  box.append(target.view);
+  fillPending(target);
   return box;
+}
+
+// Mise à jour du texte en direct, au plus une fois par image ; le fil reste collé en bas si on y était.
+const liveDirty = new Set();
+let liveFrame = 0;
+
+function nearBottom() {
+  return thread.scrollHeight - thread.scrollTop - thread.clientHeight < 120;
+}
+
+function flushLive() {
+  liveFrame = 0;
+  const stick = nearBottom();
+  for (const target of liveDirty) if (target.view?.isConnected) fillPending(target);
+  liveDirty.clear();
+  if (stick) thread.scrollTop = thread.scrollHeight;
+}
+
+function onLiveDelta(target, text) {
+  target.text = (target.text || '') + text;
+  liveDirty.add(target);
+  if (!liveFrame) liveFrame = requestAnimationFrame(flushLive);
 }
 
 // Compteur de secondes des cartes « en cours ».
@@ -660,7 +734,7 @@ function renderCompare(prompt, cols) {
   grid.setAttribute('role', 'group');
   grid.setAttribute('aria-label', 'Comparaison des réponses');
   grid.append(...cols.map((col) => {
-    if (col.state === 'pending') return renderPendingAnswer(col.cliId, col.start, { state: 'pending' });
+    if (col.state === 'pending') return renderPendingAnswer(col, { state: 'pending' });
     const box = renderAnswer(col.entry, { state: col.state });
     if (col.entry.id) box.id = `x-${col.entry.id}`;
     return box;
@@ -677,10 +751,8 @@ function renderPending(p) {
     label.append(icon('relay'), dot(cliIdByName(p.relay.relayFromCli)), relayLabel(p.relay));
     art.append(label);
   }
-  const fallbackOn = settingsState?.fallback;
-  art.append(renderPrompt(p.prompt), renderPendingAnswer(p.cliId, p.start, {
-    text: `${cliName(p.cliId)} réfléchit…${fallbackOn ? ' (bascule automatique si elle échoue)' : ''}`,
-  }));
+  p.hint = `${cliName(p.cliId)} réfléchit…${settingsState?.fallback ? ' (bascule automatique si elle échoue)' : ''}`;
+  art.append(renderPrompt(p.prompt), renderPendingAnswer(p));
   return art;
 }
 
@@ -871,7 +943,14 @@ async function sendSingle(prompt, sessionId, relayNow) {
   try {
     const body = { prompt, cli: pending.cliId, sessionId };
     if (relayNow) Object.assign(body, { relayFrom: relayNow.relayFrom, relayKind: relayNow.relayKind });
-    historyEntries.unshift(await api('/api/ask', { method: 'POST', body }));
+    historyEntries.unshift(await apiStream('/api/ask', body, (event) => {
+      if (event.type === 'delta') onLiveDelta(pending, event.text);
+      if (event.type === 'attempt' && event.cliId !== pending.cliId) {
+        // Bascule (HM-23) : la carte passe à la couleur de l'IA suivante et repart de zéro.
+        Object.assign(pending, { cliId: event.cliId, bascule: event.bascule, text: '' });
+        renderThread({ scroll: nearBottom() });
+      }
+    }));
   } catch (err) {
     localErrors.push({ sessionId, prompt, message: err.message });
     restorePrompt(prompt);
@@ -891,7 +970,9 @@ async function sendCompare(prompt, targets, sessionId) {
   const failures = [];
   await Promise.all(pending.cols.map(async (col) => {
     try {
-      const [entry] = await api('/api/compare', { method: 'POST', body: { prompt, clis: targets, only: col.cliId, compareId, sessionId } });
+      const entry = await apiStream('/api/compare', { prompt, clis: targets, only: col.cliId, compareId, sessionId }, (event) => {
+        if (event.type === 'delta') onLiveDelta(col, event.text);
+      });
       historyEntries.unshift(entry);
       col.entry = entry;
       col.state = entry.ok === false ? 'fail' : 'done';

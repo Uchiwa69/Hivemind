@@ -64,6 +64,26 @@ function relayOf(body) {
   };
 }
 
+// HM-09 : réponse en flux NDJSON (une ligne JSON par événement) quand la page demande stream: true.
+// Événements : attempt (une CLI commence), delta (texte reçu), done (échange enregistré).
+function eventStream(req, res) {
+  if (req.body?.stream !== true) return null;
+  res.status(200);
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.flushHeaders();
+  return (event) => {
+    if (!res.writableEnded) res.write(`${JSON.stringify(event)}
+`);
+  };
+}
+
+function reply(res, send, entry) {
+  if (!send) return res.json(entry);
+  send({ type: 'done', entry });
+  return res.end();
+}
+
 app.post('/api/ask', async (req, res) => {
   const prompt = String(req.body?.prompt || '').trim();
   const cli = String(req.body?.cli || '');
@@ -80,9 +100,17 @@ app.post('/api/ask', async (req, res) => {
   const relay = relayOf(req.body);
   // Une relecture ne doit pas basculer vers l'IA qui a écrit la réponse relue.
   const exclude = relay?.relayKind === 'relecture' && relay.sourceId ? [relay.sourceId] : [];
-  const answer = await askWithFallback(cli, prompt, { cwd, simulateClaudeDown, exclude, order: fallback ? fallbackOrder : [] });
+  const send = eventStream(req, res);
+  const answer = await askWithFallback(cli, prompt, {
+    cwd,
+    simulateClaudeDown,
+    exclude,
+    order: fallback ? fallbackOrder : [],
+    onAttempt: send && ((attempt) => send({ type: 'attempt', ...attempt })),
+    onDelta: send && ((text) => send({ type: 'delta', text })),
+  });
   const link = relay ? { relayFrom: relay.relayFrom, relayKind: relay.relayKind, relayFromCli: relay.relayFromCli } : {};
-  res.json(history.add({ ...answer, ...link, prompt, sessionId: sessionFor(req.body) }));
+  reply(res, send, history.add({ ...answer, ...link, prompt, sessionId: sessionFor(req.body) }));
 });
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -106,8 +134,13 @@ app.post('/api/compare', async (req, res) => {
   if (only && !ids.includes(only)) return res.status(400).json({ error: 'CLI inconnue.' });
   const sessionId = sessionFor(req.body);
   const { simulateClaudeDown } = settings.get();
-  const answers = await Promise.all((only ? [only] : ids).map((id) => ask(id, prompt, { cwd, simulateClaudeDown })));
-  res.json(answers.map((answer) => history.add({ ...answer, prompt, compareId, sessionId })));
+  // En flux, une seule colonne par requête (only).
+  const send = only ? eventStream(req, res) : null;
+  const onDelta = send && ((text) => send({ type: 'delta', text }));
+  const answers = await Promise.all((only ? [only] : ids).map((id) => ask(id, prompt, { cwd, simulateClaudeDown, onDelta })));
+  const entries = answers.map((answer) => history.add({ ...answer, prompt, compareId, sessionId }));
+  if (send) return reply(res, send, entries[0]);
+  res.json(entries);
 });
 
 app.get('/api/history', (req, res) => {
