@@ -138,5 +138,48 @@ form.addEventListener('submit', async (e) => {
   }
 });
 
+// --- Onglets ---
+document.querySelectorAll('.tab-button').forEach((button) => {
+  button.addEventListener('click', () => {
+    document.querySelectorAll('.tab-button').forEach((b) => b.classList.toggle('active', b === button));
+    document.querySelectorAll('.tab').forEach((tab) => { tab.hidden = tab.id !== `tab-${button.dataset.tab}`; });
+  });
+});
+
+function setStatus(node, text, kind = '') {
+  node.textContent = text;
+  node.className = `status ${kind}`;
+}
+
+// --- Mémoire ---
+const memoryEditor = $('#memory-editor');
+const memorySave = $('#memory-save');
+const memoryStatus = $('#memory-status');
+let savedMemory = '';
+
+async function loadMemory() {
+  const { content } = await api('/api/memory');
+  savedMemory = content;
+  memoryEditor.value = content;
+}
+
+memoryEditor.addEventListener('input', () => {
+  setStatus(memoryStatus, memoryEditor.value === savedMemory ? '' : 'Modifications non enregistrées');
+});
+
+memorySave.addEventListener('click', async () => {
+  memorySave.disabled = true;
+  try {
+    const { content } = await api('/api/memory', { method: 'PUT', body: { content: memoryEditor.value } });
+    savedMemory = content;
+    setStatus(memoryStatus, `Enregistré à ${new Date().toLocaleTimeString('fr-FR')}`, 'ok');
+  } catch (err) {
+    setStatus(memoryStatus, err.message, 'err');
+  } finally {
+    memorySave.disabled = false;
+  }
+});
+
 loadClis();
 loadHistory();
+loadMemory();

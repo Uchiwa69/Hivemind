@@ -9,6 +9,10 @@
 <body>
   <header class="topbar">
     <h1>Hivemind</h1>
+    <nav class="tabs">
+      <button type="button" class="tab-button active" data-tab="chat">Chat</button>
+      <button type="button" class="tab-button" data-tab="memory">Mémoire</button>
+    </nav>
     <div class="cli-status">
       <ul id="cli-status-list"></ul>
       <button type="button" id="refresh-clis">Rafraîchir</button>
@@ -34,6 +38,16 @@
         </form>
 
         <div id="result"></div>
+      </section>
+
+      <section id="tab-memory" class="tab" hidden>
+        <h2>Mémoire commune</h2>
+        <p class="hint">Écrite une fois ici, en Markdown, puis recopiée dans CLAUDE.md, AGENTS.md et GEMINI.md.</p>
+        <textarea id="memory-editor" class="memory-editor" spellcheck="false" placeholder="# Contexte du projet&#10;&#10;- Conventions, décisions, informations à partager avec toutes les IA…"></textarea>
+        <div class="ask-actions">
+          <button type="button" id="memory-save" class="primary">Enregistrer</button>
+          <span id="memory-status" class="status"></span>
+        </div>
       </section>
     </main>
   </div>

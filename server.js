@@ -2,6 +2,9 @@ const path = require('path');
 const express = require('express');
 const { CLIS, listClis, detect, ask } = require('./lib/clis');
 const history = require('./lib/history');
+const { readText, writeText } = require('./lib/store');
+
+const MEMORY_FILE = 'memory.md';
 
 const HOST = '127.0.0.1';
 const PORT = 3000;
@@ -34,6 +37,17 @@ app.post('/api/ask', async (req, res) => {
 
 app.get('/api/history', (req, res) => {
   res.json(history.list());
+});
+
+app.get('/api/memory', (req, res) => {
+  res.json({ content: readText(MEMORY_FILE) });
+});
+
+app.put('/api/memory', (req, res) => {
+  const content = req.body?.content;
+  if (typeof content !== 'string') return res.status(400).json({ error: 'Contenu de mémoire invalide.' });
+  writeText(MEMORY_FILE, content);
+  res.json({ content });
 });
 
 // Express 5 appelle ce callback aussi en cas d'erreur d'écoute.
