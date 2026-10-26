@@ -1,7 +1,9 @@
+const os = require('os');
 const path = require('path');
 const express = require('express');
 const { CLIS, listClis, detect, ask } = require('./lib/clis');
 const history = require('./lib/history');
+const settings = require('./lib/settings');
 const { readText, writeText } = require('./lib/store');
 
 const MEMORY_FILE = 'memory.md';
@@ -12,6 +14,14 @@ const PORT = 3000;
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Dossier où tournent les CLI : le dossier de travail choisi, sinon le dossier personnel.
+function cliCwd() {
+  if (!settings.get().workdir) return os.homedir();
+  const dir = settings.workdir();
+  if (!dir) throw new Error(`Le dossier de travail n'existe plus : ${settings.get().workdir}. Choisissez-en un autre.`);
+  return dir;
+}
 
 // Détection lancée au démarrage ; la page attend sa fin au premier chargement.
 let detection = detect();
@@ -31,7 +41,13 @@ app.post('/api/ask', async (req, res) => {
   const cli = String(req.body?.cli || '');
   if (!prompt) return res.status(400).json({ error: 'Le prompt est vide.' });
   if (!Object.hasOwn(CLIS, cli)) return res.status(400).json({ error: 'CLI inconnue.' });
-  const answer = await ask(cli, prompt);
+  let cwd;
+  try {
+    cwd = cliCwd();
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  const answer = await ask(cli, prompt, { cwd });
   res.json(history.add({ ...answer, prompt }));
 });
 
@@ -48,6 +64,18 @@ app.put('/api/memory', (req, res) => {
   if (typeof content !== 'string') return res.status(400).json({ error: 'Contenu de mémoire invalide.' });
   writeText(MEMORY_FILE, content);
   res.json({ content });
+});
+
+app.get('/api/settings', (req, res) => {
+  res.json({ ...settings.get(), defaultCwd: os.homedir() });
+});
+
+app.put('/api/settings', (req, res) => {
+  try {
+    res.json({ ...settings.setWorkdir(req.body?.workdir), defaultCwd: os.homedir() });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // Express 5 appelle ce callback aussi en cas d'erreur d'écoute.

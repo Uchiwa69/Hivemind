@@ -26,6 +26,13 @@
     </aside>
 
     <main class="main">
+      <form id="workdir-form" class="workdir-bar">
+        <label for="workdir">Dossier de travail</label>
+        <input type="text" id="workdir" placeholder="C:\Users\moi\projets\mon-projet" spellcheck="false">
+        <button type="submit">Valider</button>
+        <span id="workdir-status" class="status"></span>
+      </form>
+
       <section id="tab-chat" class="tab">
         <form id="ask-form" class="ask-form">
           <textarea id="prompt" rows="4" placeholder="Votre prompt… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)" required></textarea>

@@ -180,6 +180,33 @@ memorySave.addEventListener('click', async () => {
   }
 });
 
+// --- Dossier de travail ---
+const workdirForm = $('#workdir-form');
+const workdirInput = $('#workdir');
+const workdirStatus = $('#workdir-status');
+let workdir = '';
+
+function showWorkdir(settings) {
+  workdir = settings.workdir;
+  workdirInput.value = settings.workdir;
+  if (settings.workdir) setStatus(workdirStatus, `Les CLI travaillent dans ${settings.workdir}`, 'ok');
+  else setStatus(workdirStatus, `Aucun dossier choisi : les CLI travaillent dans ${settings.defaultCwd}`);
+}
+
+async function loadSettings() {
+  showWorkdir(await api('/api/settings'));
+}
+
+workdirForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    showWorkdir(await api('/api/settings', { method: 'PUT', body: { workdir: workdirInput.value } }));
+  } catch (err) {
+    setStatus(workdirStatus, err.message, 'err');
+  }
+});
+
 loadClis();
 loadHistory();
 loadMemory();
+loadSettings();
