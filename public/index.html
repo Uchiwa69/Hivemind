@@ -35,6 +35,15 @@
         Nouvelle session
       </button>
 
+      <div id="session-filter" class="session-filter" hidden>
+        <div class="search-box">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8.5 3.5a5 5 0 100 10 5 5 0 000-10zM12.2 12.2L16.5 16.5"/></svg>
+          <label for="session-search" class="sr-only">Rechercher dans les sessions</label>
+          <input type="search" id="session-search" placeholder="Rechercher dans les sessions…" autocomplete="off" spellcheck="false">
+        </div>
+        <div id="cli-filter" class="cli-filter" role="group" aria-label="Filtrer par IA" hidden></div>
+      </div>
+
       <nav id="session-list" class="session-list" aria-label="Sessions"></nav>
 
       <div class="sidebar-foot">

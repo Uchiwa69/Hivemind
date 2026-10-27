@@ -180,6 +180,37 @@ svg { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColo
   box-shadow: inset 0 0 0 1px var(--border);
 }
 
+.session-filter { display: flex; flex-direction: column; gap: 8px; }
+.search-box { position: relative; }
+.search-box svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--faint); pointer-events: none; }
+.search-box input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px 0 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: 13.5px;
+}
+.search-box input::placeholder { color: var(--faint); }
+.search-box input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.cli-filter { display: flex; flex-wrap: wrap; gap: 4px; }
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.filter-chip:hover { background: var(--surface-2); color: var(--text); }
+.filter-chip.active { border-color: var(--cli-color); background: var(--surface); color: var(--text); font-weight: 600; }
+
 .session-list { flex: 1; overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
 .session-group { margin-bottom: 14px; }
 .session-group h2 {
@@ -208,7 +239,10 @@ svg { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColo
   cursor: pointer;
   border-radius: var(--radius-sm);
 }
-.session-open .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.session-open .text { flex: 1; min-width: 0; display: grid; }
+.session-open .title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.session-open .snippet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
+.snippet mark { background: var(--warn-soft); color: var(--warn); font-weight: 600; border-radius: 3px; }
 .session-item.active .title { font-weight: 600; }
 .session-more { width: 28px; height: 28px; opacity: 0; }
 .session-item:hover .session-more, .session-item:focus-within .session-more, .session-more[aria-expanded="true"] { opacity: 1; }

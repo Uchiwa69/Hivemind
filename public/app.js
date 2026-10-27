@@ -368,27 +368,133 @@ function dayLabel(iso) {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
+// --- Recherche et filtre par IA dans les sessions ---
+const sessionSearch = $('#session-search');
+const cliFilter = $('#cli-filter');
+let filterCli = ''; // '' : toutes les IA
+
+// Minuscules sans accents ni espaces multiples : « Résumé » trouve « resume ».
+function fold(text) {
+  return String(text || '').replace(/\s+/g, ' ').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+// Extrait autour du texte trouvé, qui est surligné.
+function snippet(text, query) {
+  const flat = String(text).replace(/\s+/g, ' ').normalize('NFC');
+  const folded = fold(flat);
+  const at = folded.indexOf(query);
+  const node = el('span', 'snippet');
+  // Longueurs différentes (caractères rares) : on ne sait pas où surligner, on montre le début.
+  if (at === -1 || folded.length !== flat.length) {
+    node.textContent = flat.slice(0, 80);
+    return node;
+  }
+  const from = Math.max(0, at - 20);
+  const to = Math.min(flat.length, at + query.length + 60);
+  node.append(
+    `${from ? '…' : ''}${flat.slice(from, at)}`,
+    el('mark', '', flat.slice(at, at + query.length)),
+    `${flat.slice(at + query.length, to)}${to < flat.length ? '…' : ''}`,
+  );
+  return node;
+}
+
+// Sessions à afficher. La recherche porte sur le titre, puis les prompts et les réponses ;
+// match donne le texte où elle a trouvé (absent si c'est le titre).
+function visibleSessions() {
+  const query = fold(sessionSearch.value.trim());
+  const list = filterCli ? sessionsList.filter((session) => session.clis.includes(filterCli)) : sessionsList;
+  if (!query) return list.map((session) => ({ session }));
+  const bySession = new Map();
+  for (const entry of historyEntries) {
+    if (!bySession.has(entry.sessionId)) bySession.set(entry.sessionId, []);
+    bySession.get(entry.sessionId).push(entry);
+  }
+  return list.flatMap((session) => {
+    if (fold(session.title).includes(query)) return [{ session }];
+    for (const entry of bySession.get(session.id) || []) {
+      const text = [entry.prompt, entry.reponse].find((t) => fold(t).includes(query));
+      if (text) return [{ session, match: snippet(text, query) }];
+    }
+    return [];
+  });
+}
+
+const shortName = (name) => name.replace(/ (CLI|Code)$/, '');
+
+// Une puce par IA présente dans les sessions (seulement s'il y en a au moins 2).
+function renderCliFilter() {
+  const used = KNOWN_CLIS.filter((id) => sessionsList.some((session) => session.clis.includes(id)));
+  if (!used.includes(filterCli)) filterCli = '';
+  cliFilter.hidden = used.length < 2;
+  // On ne reconstruit les puces que si la liste change, pour garder le focus clavier.
+  if (cliFilter.dataset.ids !== used.join()) {
+    cliFilter.dataset.ids = used.join();
+    cliFilter.replaceChildren(...used.map((id) => {
+      const chip = paint(button('filter-chip', '', () => {
+        filterCli = filterCli === id ? '' : id;
+        renderSessions();
+      }), id);
+      chip.dataset.cli = id;
+      chip.append(dot(id), shortName(clis.find((cli) => cli.id === id)?.name || id));
+      return chip;
+    }));
+  }
+  for (const chip of cliFilter.children) {
+    chip.classList.toggle('active', chip.dataset.cli === filterCli);
+    chip.setAttribute('aria-pressed', String(chip.dataset.cli === filterCli));
+  }
+}
+
+function clearSessionFilter() {
+  sessionSearch.value = '';
+  filterCli = '';
+  renderSessions();
+  sessionSearch.focus();
+}
+
+sessionSearch.addEventListener('input', () => renderSessions());
+sessionSearch.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && sessionSearch.value) {
+    e.stopPropagation();
+    sessionSearch.value = '';
+    renderSessions();
+  }
+});
+
 function renderSessions() {
+  $('#session-filter').hidden = !sessionsList.length;
+  renderCliFilter();
   if (!sessionsList.length) {
     sessionList.replaceChildren(el('p', 'session-empty', 'Aucune session pour le moment.'));
     return;
   }
+  const visible = visibleSessions();
+  if (!visible.length) {
+    const empty = el('p', 'session-empty', 'Aucune session ne correspond. ');
+    empty.append(button('btn-text', 'Effacer la recherche', clearSessionFilter));
+    sessionList.replaceChildren(empty);
+    return;
+  }
   const groups = new Map();
-  for (const session of sessionsList) {
-    const label = dayLabel(session.lastDate);
+  for (const item of visible) {
+    const label = dayLabel(item.session.lastDate);
     if (!groups.has(label)) groups.set(label, []);
-    groups.get(label).push(session);
+    groups.get(label).push(item);
   }
   sessionList.replaceChildren(...[...groups].map(([label, list]) => {
     const group = el('section', 'session-group');
     const ul = el('ul');
-    ul.append(...list.map((session) => {
+    ul.append(...list.map(({ session, match }) => {
       const li = el('li', `session-item${session.id === currentSessionId ? ' active' : ''}`);
       const open = button('session-open', '', () => openSession(session.id));
       if (session.id === currentSessionId) open.setAttribute('aria-current', 'page');
       const dots = el('span', 'dots');
       dots.append(...session.clis.slice(0, 3).map(dot));
-      open.append(dots, el('span', 'title', session.title));
+      const text = el('span', 'text');
+      text.append(el('span', 'title', session.title));
+      if (match) text.append(match);
+      open.append(dots, text);
       open.title = `${session.title} · ${session.count} échange${session.count > 1 ? 's' : ''}`;
       const more = button('icon-btn session-more');
       more.setAttribute('aria-label', `Actions de la session « ${session.title} »`);
