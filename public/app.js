@@ -281,6 +281,39 @@ $('#input-form').addEventListener('submit', async (e) => {
   }
 });
 
+// --- Thème clair / sombre (le thème de départ est posé dans index.html) ---
+const themeToggle = $('#theme-toggle');
+const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+
+function savedTheme() {
+  try {
+    return localStorage.getItem('hivemind.theme');
+  } catch {
+    return null;
+  }
+}
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  const next = theme === 'dark' ? 'clair' : 'sombre';
+  themeToggle.setAttribute('aria-label', `Passer au thème ${next}`);
+  themeToggle.title = `Passer au thème ${next}`;
+}
+
+themeToggle.addEventListener('click', () => {
+  const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  try {
+    localStorage.setItem('hivemind.theme', theme);
+  } catch { /* le choix vaut pour cette page seulement */ }
+  applyTheme(theme);
+});
+
+// Tant qu'aucun thème n'a été choisi, on suit le système.
+systemDark.addEventListener('change', (e) => {
+  if (!savedTheme()) applyTheme(e.matches ? 'dark' : 'light');
+});
+applyTheme(document.documentElement.dataset.theme);
+
 // --- Barre latérale (repliable sur petit écran) ---
 const sidebar = $('#sidebar');
 const scrim = $('#scrim');
