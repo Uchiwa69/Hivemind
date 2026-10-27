@@ -28,6 +28,7 @@
 | Données | `%APPDATA%\Hivemind` (historique, sessions, mémoire, réglages, compteurs). Au premier lancement, Hivemind propose d'importer un dossier `data/` existant de la version développeur. La désinstallation conserve ces données. |
 | Désinstallation | Paramètres Windows → **Applications installées** → Hivemind → Désinstaller. |
 | Prérequis | Windows 10/11 64 bits · au moins une CLI d'IA installée **et connectée** (si aucune n'est détectée, la page « Bienvenue » donne les commandes d'installation). |
+| Dépannage | Une IA s'affiche « absente » alors qu'elle répond dans un terminal (ex. `agy --version`) : cliquez **Rafraîchir** dans la barre latérale. La détection du démarrage peut échouer si une CLI met plus de 20 s à répondre (vu le 27/10/2026 avec Antigravity, revenue après un clic sur Rafraîchir). |
 
 **Option B — Installation développeur**
 
@@ -113,6 +114,8 @@
 | HM-08 | 5 | 2 | … min | | |
 | HM-13 | 20 | 5 | … min | | |
 | HM-12 | 5 | 2 | … min | | |
+| HM-18 | 3 | non estimée (Could) | … min | À montrer en démo | Could hors périmètre, ajoutée en fin de projet : recherche dans les titres, prompts et réponses (sans accents), filtre par IA, mot surligné |
+| HM-20 | 3 | non estimée (Could) | … min | À montrer en démo | Could hors périmètre, ajoutée pour présenter au tableau : bouton clair / sombre, choix mémorisé, thème du système par défaut |
 
 *À remplir avec tes vraies mesures ce soir (heure de début/fin de chaque ticket, nombre de prompts).*
 
@@ -171,6 +174,7 @@ Vue Roadmap : [lien]
 | Quota d'une IA épuisé | Forte | Moyen | 2 IA connectées ; Antigravity gratuit en secours | Développement et démo |
 | `claude -p` bloqué (session imbriquée) | Moyenne | Fort | Lancer l'appli dans un terminal à part (section 0) | Dès le MVP |
 | Équipe d'une seule personne | Certaine | Fort | Périmètre réduit aux Must + mémoire ; marge de 20 % | Toutes les phases |
+| CLI marquée « absente » à tort au démarrage | Faible (vu 1 fois, le 27/10/2026) | Moyen | Cliquer « Rafraîchir » avant la démo ; vérifier les pastilles des IA | Démo |
 
 ---
 
