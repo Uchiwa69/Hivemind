@@ -110,8 +110,7 @@ function eventStream(req, res) {
   res.setHeader('Cache-Control', 'no-cache');
   res.flushHeaders();
   return (event) => {
-    if (!res.writableEnded) res.write(`${JSON.stringify(event)}
-`);
+    if (!res.writableEnded) res.write(`${JSON.stringify(event)}\n`);
   };
 }
 
@@ -292,7 +291,8 @@ app.post('/api/memory/summarize', async (req, res) => {
     ? `Résume cette décision en une seule phrase factuelle :\n\nQuestion posée : ${question}\n\nRéponse retenue : ${text}`
     : `Résume cette décision en une seule phrase factuelle :\n\n${text}`;
   const { simulateClaudeDown } = settings.get();
-  const answer = await ask(cli, prompt, { cwd, simulateClaudeDown });
+  // Page fermée pendant le résumé : la CLI est arrêtée au lieu de tourner pour rien (HM-10).
+  const answer = await ask(cli, prompt, { cwd, simulateClaudeDown, signal: track(req, res) });
   if (!answer.ok) return res.status(502).json({ error: `Résumé impossible : ${answer.erreur.message} ${answer.erreur.action}` });
   res.json({ resume: answer.reponse });
 });
